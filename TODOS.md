@@ -6,24 +6,22 @@ Items deferred from CEO Review (2026-03-24) and design session.
 
 ## P1 — Pre-Build Gates (block Phase 1 implementation)
 
-### Open WebUI API Spike
-**What:** 2-hour validation spike on a live Open WebUI container. Confirm `POST /api/v1/configs/default/system-prompt` or equivalent REST endpoint exists and supports runtime prompt switching without a container restart. If the endpoint doesn't exist, confirm the bind-mounted config file fallback and measure restart latency (target: <5s restart acceptable for pack switching?).
-**Why:** Pack switching is the core UX of the domain packs system. If Open WebUI requires a container restart on every pack switch, the UX changes significantly (5-10s delay vs instant). The API surface is not stable across Open WebUI minor versions.
-**How to start:** Pin the Open WebUI version in docker-compose.yml first. Then: `docker run -d open-webui:VERSION`, hit the API with curl, log the result.
-**Effort:** S (human: 2h / CC+gstack: 30min)
-**Priority:** P1 — blocks pack system build
-**Owner:** Dev
+### ~~Open WebUI API Spike~~ — RESOLVED (2026-03-24)
+**Result:** No global system prompt endpoint exists. Correct approach is per-model custom entries.
+**Architecture decision:**
+- Flask admin creates one OW custom model per domain pack via `POST /api/v1/models/model/update`
+- Each pack gets a custom model entry with `params.system` set to the pack's system prompt
+- Pack activation = update that model's `params.system` (no container restart, no prompt clearing)
+- Users select their active pack by choosing the model in the OW UI
+- First-boot: Flask generates an admin API key and stores it at `/opt/survivalist-llm/.ow-api-key`
+- Rollback is now trivially safe: each pack is a separate model entry; activation = model switch
+- Relevant endpoints: `POST /api/v1/models/create`, `POST /api/v1/models/model/update`
+- Requires: OW admin API key (Bearer token) — generated once at first-boot via OW admin account
+**Unblocked:** Pack Switch Rollback (below) is now resolved by design — no "clear then set" race.
 
-### Pack Switch Rollback Behavior
-**What:** Define and implement the rollback behavior for mid-activation failures. When switching packs, the current flow is: (1) clear current system prompt via OW API, (2) load new pack's system prompt. If step 2 fails, the LLM currently has no system prompt and behaves as a generic unconfigured assistant.
-**Why:** A user in an emergency situation (Elena with a broken chainsaw) who tries to switch packs and hits an API failure is now talking to a generic LLM with no context — worse than before. This is a data-loss-adjacent UX failure.
-**Options:**
-  - A) Re-activate previous pack on failure (restore prior prompt via OW API)
-  - B) Define a baseline fallback prompt ("I am a general reference tool. No domain pack is active.") that prevents blank behavior
-  - Recommend: Both — try A, fall back to B if OW API is unavailable.
-**Effort:** S (human: 2h / CC+gstack: 20min)
-**Priority:** P1 — implement before pack system ships
-**Depends on:** Open WebUI API Spike (need to know if runtime prompt switching is available)
+### ~~Pack Switch Rollback Behavior~~ — RESOLVED (2026-03-24)
+**Result:** Per-model architecture eliminates the rollback problem entirely.
+**Why resolved:** Original concern was a two-step "clear then set" race where step 2 failure left no active prompt. With per-model entries, activation is a single atomic model-selection write — there is no intermediate blank state. The previous pack model entry is never touched during activation of a new one. A baseline "no pack active" model entry (base model, no system prompt override) covers the deactivation case.
 
 ---
 
@@ -98,20 +96,26 @@ Items deferred from CEO Review (2026-03-24) and design session.
 ## Resolved / Done
 
 - ~~Pack install method~~ — RESOLVED: File-upload only (USB/local web upload)
-- ~~System prompt injection approach~~ — RESOLVED: OW REST API with fallback; spike required
-- ~~Emergency UI implementation~~ — RESOLVED: Option B (static wrapper HTML)
+- ~~System prompt injection approach~~ — RESOLVED: Per-model OW custom entries via `POST /api/v1/models/model/update` with `params.system`; no global endpoint exists
+- ~~Emergency UI implementation~~ — RESOLVED: Option B (static wrapper HTML / iframe)
+- ~~Open WebUI API Spike~~ — RESOLVED: Per-model approach; no "clear then set" race; rollback problem eliminated by design
+- ~~Pack Switch Rollback Behavior~~ — RESOLVED: Per-model architecture makes this a non-issue
+- ~~kiwix-serve SIGHUP Validation~~ — RESOLVED: Use `--monitorLibrary` flag; SIGHUP confirmed as fallback; no Docker socket needed
 
 ---
 
 ## Engineering Review Additions (2026-03-24)
 
-### kiwix-serve SIGHUP Validation (bundle with OW API spike)
-**What:** Verify that kiwix-serve v3.x reloads library.xml when it receives SIGHUP. If it does, Flask can send SIGHUP via Docker socket for zero-downtime library updates. If not, fall back to `docker restart survivalist-kiwix` (2-5s downtime acceptable).
-**Why:** The plan calls for SIGHUP-based reload, but this is not confirmed. If kiwix-serve ignores SIGHUP, the Flask code using it will silently fail — pack installs succeed but the ZIM doesn't appear in Kiwix until the next restart.
-**How to check:** `docker run ghcr.io/kiwix/kiwix-tools:latest kiwix-serve --help | grep -i signal` OR run kiwix-serve with a library, add an entry to library.xml, send SIGHUP, verify the new ZIM is served.
-**Effort:** S (bundle with OW API spike — same 2-hour session)
-**Priority:** P1 — determines Flask→kiwix reload implementation
-**Depends on:** None — run before Flask admin build
+### ~~kiwix-serve SIGHUP Validation~~ — RESOLVED (2026-03-24)
+**Result:** SIGHUP confirmed working in kiwix-tools ≥ 3.2.0. Better approach: use `--monitorLibrary` flag.
+**Architecture decision:**
+- Run kiwix-serve with `--library /data/library.xml --monitorLibrary` (flag `-M`)
+- Flask pack installer writes updated `library.xml` atomically (tmp + rename)
+- kiwix-serve detects file mtime change and reloads automatically within ~1s
+- No Docker socket access needed — simpler Flask implementation
+- SIGHUP (`docker kill --signal=SIGHUP survivalist-kiwix`) works as manual override if needed
+- Must pin kiwix-tools image to ≥ 3.2.0 (SIGHUP + --monitorLibrary introduced in 3.2.0)
+**Unblocked:** Add kiwix-serve to docker-compose.yml (below).
 
 ### Image Version Maintenance Procedure
 **What:** Define how image versions in docker-compose.yml get updated after initial pin. When OW or Ollama ships a security fix, buyers need a path to update. For Phase 1 (SD card), this means a new image SKU. For Phase 2 (SurvivorBox appliance), this needs a USB update mechanism.
@@ -122,11 +126,11 @@ Items deferred from CEO Review (2026-03-24) and design session.
 **Depends on:** Phase 2 hardware sourcing decision
 
 ### Add kiwix-serve to docker-compose.yml (P1 Build Blocker)
-**What:** Add kiwix-serve as a service in docker-compose.yml with: correct image pin, --library flag pointing to /opt/survivalist-llm/packs/library.xml, mem_limit: 512m, shared packs/ volume with Flask admin service.
+**What:** Add kiwix-serve as a service in docker-compose.yml with: pinned image (kiwix-tools ≥ 3.2.0), `--library /data/library.xml --monitorLibrary` flags, mem_limit: 512m, shared packs/ volume with Flask admin service.
 **Why:** The entire pack system (ZIM serving, library routing, Kiwix browser at /library) depends on kiwix-serve. Without it in the compose file, nothing in the pack system can be built or tested.
 **Effort:** S (human: 1h / CC: 10min)
 **Priority:** P1 — blocks all pack system work
-**Depends on:** None — do this before anything else
+**Depends on:** kiwix-serve SIGHUP spike (RESOLVED above — use --monitorLibrary)
 
 ### Open WebUI Config Drift Protection
 **What:** Flask admin service should validate that its expected config values are still present in Open WebUI on every startup (not just on first boot). If Open WebUI has reset its config (corrupt DB, version migration, container recreation), Flask should re-apply the configuration (model name, hidden selector, UI title) and log a warning.

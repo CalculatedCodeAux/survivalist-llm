@@ -57,3 +57,4 @@ open-webui-data/
 # Temporary files
 tmp/
 *.tmp
+.gstack/
