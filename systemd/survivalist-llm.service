@@ -1,0 +1,68 @@
+# ============================================================
+# survivalist-llm.service
+# Manages the entire LLM stack: WiFi AP + Docker containers.
+#
+# Install:
+#   sudo cp survivalist-llm.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now survivalist-llm.service
+# ============================================================
+
+[Unit]
+Description=Survivalist LLM Server (WiFi AP + Ollama + Open WebUI)
+Documentation=file:///opt/survivalist-llm/README.md
+
+# Must run after network interfaces are up and Docker is ready
+After=network.target network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+# Soft-order: start our AP before Docker containers need the network
+Before=
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+WorkingDirectory=/opt/survivalist-llm
+
+# ── Environment ─────────────────────────────────────────────
+EnvironmentFile=-/opt/survivalist-llm/.env
+
+# ── Pre-start: Bring up the WiFi Access Point ───────────────
+ExecStartPre=/opt/survivalist-llm/scripts/ap-up.sh
+
+# ── Start: Launch Docker Compose stack ──────────────────────
+ExecStart=/usr/bin/docker compose -f /opt/survivalist-llm/docker-compose.yml up -d --remove-orphans
+
+# ── Post-start: Wait for Ollama to be healthy ────────────────
+ExecStartPost=/opt/survivalist-llm/scripts/wait-healthy.sh
+
+# ── Stop: Graceful shutdown ──────────────────────────────────
+# 1. Stop containers first (allows in-flight inference to drain)
+ExecStop=/usr/bin/docker compose -f /opt/survivalist-llm/docker-compose.yml stop --timeout 30
+# 2. Tear down the WiFi AP
+ExecStopPost=/opt/survivalist-llm/scripts/ap-down.sh
+
+# ── Restart policy ──────────────────────────────────────────
+Restart=on-failure
+RestartSec=15s
+# Give up after 3 consecutive failures (prevents boot loops)
+StartLimitIntervalSec=120
+StartLimitBurst=3
+
+# ── Timeouts ────────────────────────────────────────────────
+TimeoutStartSec=120
+TimeoutStopSec=60
+
+# ── Resource limits (host-level) ────────────────────────────
+# Docker enforces per-container limits; this is a safety net.
+LimitNOFILE=65536
+
+# ── Logging ─────────────────────────────────────────────────
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=survivalist-llm
+
+[Install]
+WantedBy=multi-user.target

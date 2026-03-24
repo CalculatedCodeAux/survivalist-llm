@@ -1,0 +1,146 @@
+# ============================================================
+# Survivalist LLM — Docker Compose Stack
+#
+# Services:
+#   ollama      — LLM inference engine
+#   open-webui  — Mobile-friendly chat UI (port 8080 → nginx → :80)
+#
+# Variables are injected from .env (written by setup.sh).
+# ============================================================
+
+version: "3.8"
+
+services:
+
+  # ── Ollama: LLM inference engine ───────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: survivalist-ollama
+    restart: unless-stopped
+
+    volumes:
+      # Model files persist across container restarts/upgrades
+      - ollama_models:/root/.ollama
+
+    # Bind to localhost only — nginx + webui are the only consumers
+    ports:
+      - "127.0.0.1:11434:11434"
+
+    environment:
+      # Concurrency: 1 parallel request on low-end hardware
+      OLLAMA_NUM_PARALLEL:        "${OLLAMA_NUM_PARALLEL:-1}"
+      # Never load more than one model at a time (RAM saver)
+      OLLAMA_MAX_LOADED_MODELS:   "${OLLAMA_MAX_LOADED_MODELS:-1}"
+      # Thread count (set to CPU_CORES - 1 by setup.sh)
+      OLLAMA_NUM_THREAD:          "${OLLAMA_NUM_THREAD:-2}"
+      # Context window length
+      OLLAMA_CONTEXT_LENGTH:      "${OLLAMA_CONTEXT_LENGTH:-4096}"
+      # Keep model loaded for 10 min after last request, then unload
+      OLLAMA_KEEP_ALIVE:          "10m"
+      # Flash attention (reduces KV-cache memory by ~2x where supported)
+      OLLAMA_FLASH_ATTENTION:     "1"
+      # Suppress noisy CUDA/Metal logs
+      OLLAMA_DEBUG:               "0"
+
+    # Hard memory ceiling — prevents OOM on the host
+    mem_limit:      "${OLLAMA_MEM_LIMIT:-4g}"
+    memswap_limit:  "${OLLAMA_MEM_LIMIT:-4g}"   # no swap (avoid thrashing)
+
+    # CPU shares — leave headroom for OS and WiFi stack
+    cpu_shares: 512
+
+    # Graceful shutdown: allow up to 30 s for in-flight inference to finish
+    stop_grace_period: 30s
+
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Open WebUI: Chat interface ─────────────────────────────────────────
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: survivalist-webui
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+    # Expose on all interfaces so nginx (on host) can reach it.
+    # nginx then fronts this on port 80 for LAN clients.
+    ports:
+      - "127.0.0.1:8080:8080"
+
+    volumes:
+      - webui_data:/app/backend/data
+
+    environment:
+      # Connect to Ollama on the host-facing Docker bridge
+      OLLAMA_BASE_URL:            "http://ollama:11434"
+      # Branding
+      WEBUI_NAME:                 "Survivalist LLM"
+      # Disable authentication for LAN-only use
+      WEBUI_AUTH:                 "False"
+      # Disable all telemetry / update checks (we're offline)
+      SCARF_NO_ANALYTICS:         "true"
+      DO_NOT_TRACK:               "true"
+      ANONYMIZED_TELEMETRY:       "False"
+      ENABLE_COMMUNITY_SHARING:   "False"
+      ENABLE_MESSAGE_RATING:      "False"
+      RESET_CONFIG_ON_START:      "False"
+      # Disable signup (no-auth mode)
+      ENABLE_SIGNUP:              "False"
+      # Default model (set by setup.sh)
+      DEFAULT_MODELS:             "${OLLAMA_MODEL:-llama3.2:3b-instruct-q4_K_M}"
+
+    mem_limit: "512m"
+    cpu_shares: 256
+
+    stop_grace_period: 15s
+
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# ── Named Volumes ──────────────────────────────────────────────────────────
+volumes:
+  ollama_models:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      # Models stored in /opt/survivalist-llm/models for easy backup
+      device: /opt/survivalist-llm/models
+
+  webui_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/survivalist-llm/webui-data
+
+# ── Network ────────────────────────────────────────────────────────────────
+networks:
+  default:
+    name: survivalist-net
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24

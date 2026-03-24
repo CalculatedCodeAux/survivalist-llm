@@ -1,0 +1,59 @@
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Model files (large binaries)
+*.gguf
+*.ggml
+*.bin
+models/
+
+# ZIM files (offline library content)
+*.zim
+packs/*/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+env/
+*.egg-info/
+.eggs/
+dist/
+build/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs
+*.log
+logs/
+
+# SD card image files
+*.img
+*.img.gz
+*.img.xz
+
+# Docker volumes (local dev)
+.docker-data/
+ollama-data/
+open-webui-data/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+tmp/
+*.tmp
