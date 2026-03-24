@@ -2,8 +2,10 @@
 # Survivalist LLM — Docker Compose Stack
 #
 # Services:
-#   ollama      — LLM inference engine
-#   open-webui  — Mobile-friendly chat UI (port 8080 → nginx → :80)
+#   ollama             — LLM inference engine
+#   open-webui         — Mobile-friendly chat UI
+#   kiwix-serve        — Offline library browser (ZIM files)
+#   survivorpack-admin — Flask admin: pack lifecycle + first-boot config
 #
 # Variables are injected from .env (written by setup.sh).
 # ============================================================
@@ -14,7 +16,7 @@ services:
 
   # ── Ollama: LLM inference engine ───────────────────────────────────────
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.18.2
     container_name: survivalist-ollama
     restart: unless-stopped
 
@@ -67,15 +69,14 @@ services:
 
   # ── Open WebUI: Chat interface ─────────────────────────────────────────
   open-webui:
-    image: ghcr.io/open-webui/open-webui:main
+    image: ghcr.io/open-webui/open-webui:0.8.10
     container_name: survivalist-webui
     restart: unless-stopped
     depends_on:
       ollama:
         condition: service_healthy
 
-    # Expose on all interfaces so nginx (on host) can reach it.
-    # nginx then fronts this on port 80 for LAN clients.
+    # Bind to localhost only — nginx fronts this on port 80
     ports:
       - "127.0.0.1:8080:8080"
 
@@ -83,10 +84,10 @@ services:
       - webui_data:/app/backend/data
 
     environment:
-      # Connect to Ollama on the host-facing Docker bridge
+      # Connect to Ollama via Docker internal network
       OLLAMA_BASE_URL:            "http://ollama:11434"
       # Branding
-      WEBUI_NAME:                 "Survivalist LLM"
+      WEBUI_NAME:                 "Ask SurvivorOS"
       # Disable authentication for LAN-only use
       WEBUI_AUTH:                 "False"
       # Disable all telemetry / update checks (we're offline)
@@ -98,7 +99,7 @@ services:
       RESET_CONFIG_ON_START:      "False"
       # Disable signup (no-auth mode)
       ENABLE_SIGNUP:              "False"
-      # Default model (set by setup.sh)
+      # Default model (set by setup.sh; overridden per-pack at runtime)
       DEFAULT_MODELS:             "${OLLAMA_MODEL:-llama3.2:3b-instruct-q4_K_M}"
 
     mem_limit: "512m"
@@ -112,6 +113,118 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── kiwix-serve: Offline library browser ───────────────────────────────
+  #
+  # Serves ZIM files (Wikipedia, WikiHow, domain pack content) at /library.
+  # Uses --monitorLibrary so Flask can add/remove ZIMs by writing library.xml
+  # atomically — kiwix-serve detects the mtime change and reloads within ~1s.
+  # No container restart or Docker socket access required for library updates.
+  #
+  # Confirmed: --monitorLibrary introduced in kiwix-tools 3.2.0 (we run 3.8.2).
+  kiwix-serve:
+    image: ghcr.io/kiwix/kiwix-tools:3.8.2
+    container_name: survivalist-kiwix
+    restart: unless-stopped
+
+    command: >
+      kiwix-serve
+      --library /data/library.xml
+      --monitorLibrary
+      --port 8888
+      --threads 2
+
+    ports:
+      - "127.0.0.1:8888:8888"
+
+    volumes:
+      # Shared packs volume — Flask writes ZIMs + library.xml here
+      - packs_data:/data
+
+    mem_limit: "512m"
+    cpu_shares: 128
+
+    stop_grace_period: 10s
+
+    # kiwix-serve only starts successfully if library.xml exists.
+    # survivorpack-admin writes an empty library.xml on first boot.
+    depends_on:
+      survivorpack-admin:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8888/catalog/search"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # ── survivorpack-admin: Pack lifecycle + first-boot config ──────────────
+  #
+  # Flask service responsible for:
+  #   - First-boot: configure Open WebUI (model, branding, admin API key)
+  #   - Pack upload/install (.survivorpack zip validation + extraction)
+  #   - Pack activation (POST /api/v1/models/model/update to OW)
+  #   - Pack deactivation / uninstall
+  #   - library.xml atomic writes for kiwix-serve --monitorLibrary
+  #   - Config drift detection: re-applies OW config on every startup
+  #
+  # Admin UI accessible at http://llm.local/admin (LAN only, no auth — off-grid).
+  survivorpack-admin:
+    build:
+      context: ./survivorpack-admin
+      dockerfile: Dockerfile
+    image: survivorpack-admin:latest
+    container_name: survivalist-admin
+    restart: unless-stopped
+    depends_on:
+      open-webui:
+        condition: service_healthy
+
+    ports:
+      - "127.0.0.1:5000:5000"
+
+    volumes:
+      # Shared packs volume — reads/writes ZIMs and library.xml
+      - packs_data:/packs
+      # Sentinel and state files persist across restarts
+      - admin_state:/state
+
+    environment:
+      # Open WebUI internal URL (Docker bridge network)
+      OW_BASE_URL:          "http://open-webui:8080"
+      # Ollama model to configure at first boot
+      OLLAMA_MODEL:         "${OLLAMA_MODEL:-llama3.2:3b-instruct-q4_K_M}"
+      # Paths inside the container
+      PACKS_DIR:            "/packs"
+      STATE_DIR:            "/state"
+      SENTINEL_FILE:        "/state/.first-boot-complete"
+      PACKS_STATE_FILE:     "/state/packs_state.json"
+      LIBRARY_XML:          "/packs/library.xml"
+
+    mem_limit: "256m"
+    cpu_shares: 128
+
+    stop_grace_period: 10s
+
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:5000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
     logging:
       driver: "json-file"
@@ -135,6 +248,22 @@ volumes:
       type: none
       o: bind
       device: /opt/survivalist-llm/webui-data
+
+  packs_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      # ZIM files + library.xml shared between kiwix-serve and admin
+      device: /opt/survivalist-llm/packs
+
+  admin_state:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      # Sentinel file, pack state JSON, OW API key
+      device: /opt/survivalist-llm/admin-state
 
 # ── Network ────────────────────────────────────────────────────────────────
 networks:
