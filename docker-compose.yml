@@ -10,8 +10,6 @@
 # Variables are injected from .env (written by setup.sh).
 # ============================================================
 
-version: "3.8"
-
 services:
 
   # ── Ollama: LLM inference engine ───────────────────────────────────────
@@ -114,7 +112,9 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 30s
+      # First boot downloads ~30 model files from HuggingFace (~20s) before
+      # the server starts. 120s covers slow connections and cold caches.
+      start_period: 120s
 
     logging:
       driver: "json-file"
