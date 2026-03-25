@@ -101,6 +101,7 @@ Items deferred from CEO Review (2026-03-24) and design session.
 - ~~Open WebUI API Spike~~ — RESOLVED: Per-model approach; no "clear then set" race; rollback problem eliminated by design
 - ~~Pack Switch Rollback Behavior~~ — RESOLVED: Per-model architecture makes this a non-issue
 - ~~kiwix-serve SIGHUP Validation~~ — RESOLVED: Use `--monitorLibrary` flag; SIGHUP confirmed as fallback; no Docker socket needed
+- ~~First-Boot OW API Integration Bugs~~ — RESOLVED: JWT signin via `POST /api/v1/auths/signin`; `_ow_request` helper with auto-refresh; config via env vars (no `/api/v1/configs/`); model create-first with 401="already registered" detection; `?id=` query param on update
 
 ---
 
@@ -125,12 +126,8 @@ Items deferred from CEO Review (2026-03-24) and design session.
 **Priority:** P3 — before Phase 2 SurvivorBox ships (buyers expect hardware to be maintainable)
 **Depends on:** Phase 2 hardware sourcing decision
 
-### Add kiwix-serve to docker-compose.yml (P1 Build Blocker)
-**What:** Add kiwix-serve as a service in docker-compose.yml with: pinned image (kiwix-tools ≥ 3.2.0), `--library /data/library.xml --monitorLibrary` flags, mem_limit: 512m, shared packs/ volume with Flask admin service.
-**Why:** The entire pack system (ZIM serving, library routing, Kiwix browser at /library) depends on kiwix-serve. Without it in the compose file, nothing in the pack system can be built or tested.
-**Effort:** S (human: 1h / CC: 10min)
-**Priority:** P1 — blocks all pack system work
-**Depends on:** kiwix-serve SIGHUP spike (RESOLVED above — use --monitorLibrary)
+### ~~Add kiwix-serve to docker-compose.yml~~ — RESOLVED (2026-03-24)
+**Result:** kiwix-serve added to docker-compose.yml as `survivalist-kiwix` service. Pinned to `ghcr.io/kiwix/kiwix-tools:3.8.2`, running with `--library /data/library.xml --monitorLibrary` flags, 512m mem_limit, shared packs/ volume with admin service.
 
 ### Open WebUI Config Drift Protection
 **What:** Flask admin service should validate that its expected config values are still present in Open WebUI on every startup (not just on first boot). If Open WebUI has reset its config (corrupt DB, version migration, container recreation), Flask should re-apply the configuration (model name, hidden selector, UI title) and log a warning.
@@ -139,10 +136,20 @@ Items deferred from CEO Review (2026-03-24) and design session.
 **Effort:** S (human: 2h / CC: 15min)
 **Priority:** P2 — implement with Flask admin service build, before Phase 1 launch
 
-### Main Chat Interface Legal Disclaimer
-**What:** The main chat interface (/) needs a persistent, non-dismissible disclaimer visible before the user submits any query. Currently only the emergency UI has this. Attorney must review the main interface disclaimer separately from (or as part of) the emergency UI review.
-**Why:** Users running medical triage queries ("is this heat stroke?") will primarily use the main chat interface, not the emergency UI. The legal protection must be on the main UI.
-**Implementation:** Options: (a) nginx sub_filter injects a disclaimer banner above the chat UI on every page load, (b) Open WebUI's built-in "system prompt visible" feature displays it, (c) The attorney confirms the Open WebUI terms/policy modal on first access counts as sufficient.
-**Effort:** S-M depending on approach (confirm with attorney first)
-**Priority:** P1 — required before taking money. Same gate as ToS review.
-**Depends on:** Attorney engagement (Reviewer Concern #1)
+### ~~First-Boot OW API Integration Bugs~~ — RESOLVED (2026-03-24)
+**Result:** Fixed in `survivorpack-admin/app.py`. All 54 tests pass.
+**Architecture decisions:**
+- Replaced `_get_ow_api_key` / `OW_API_KEY_FILE` with JWT-based auth via `_ow_signin()` + `_ow_jwt_cache`
+- Added `_ow_request(method, path, **kwargs)` helper that auto-refreshes JWT on 401 (token expiry, not "already registered")
+- `_apply_ow_config()` is now a no-op (all OW config via docker-compose env vars; `POST /api/v1/configs/` returns 405 in OW 0.8.10)
+- `_check_config_drift()` now checks `GET /api/v1/models` for model existence rather than `GET /api/v1/configs/` (which returns empty body in OW 0.8.10)
+- `_create_or_update_ow_model()` fixed: try create first; OW returns 401 "already registered" for duplicates (not 400/409); update requires `?id=<model_id>` query param AND `id` in body; added `"capabilities": {}` to `meta` field
+- `EXPECTED_OW_CONFIG` dict removed (dead code — config is env-var driven)
+
+**Also found — healthcheck `curl` not in images:** Fixed in docker-compose.yml (2026-03-24):
+- `ollama/ollama` → `CMD ollama list`
+- `ghcr.io/kiwix/kiwix-tools` → `CMD wget -qO/dev/null`
+- Python images → `CMD-SHELL python3 -c urllib`
+
+### ~~Main Chat Interface Legal Disclaimer~~ — RESOLVED (2026-03-24)
+**Result:** nginx `sub_filter` injects a persistent non-dismissible disclaimer bar into every Open WebUI page. Emergency UI also has an inline disclaimer. Attorney review of disclaimer copy still required before launch.

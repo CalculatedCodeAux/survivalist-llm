@@ -25,6 +25,7 @@ import fcntl
 import json
 import logging
 import os
+import re
 import secrets
 import shutil
 import tempfile
@@ -46,15 +47,8 @@ LIBRARY_XML   = Path(os.environ.get("LIBRARY_XML",      "/packs/library.xml"))
 OW_BASE_URL   = os.environ.get("OW_BASE_URL",           "http://open-webui:8080")
 OLLAMA_MODEL  = os.environ.get("OLLAMA_MODEL",          "llama3.2:3b-instruct-q4_K_M")
 
-OW_API_KEY_FILE = STATE_DIR / ".ow-api-key"
-
-# Required OW config values — drift detection compares against these
-EXPECTED_OW_CONFIG = {
-    "WEBUI_NAME": "Ask SurvivorOS",
-    "DEFAULT_MODELS": OLLAMA_MODEL,
-    "ENABLE_SIGNUP": "False",
-    "WEBUI_AUTH": "False",
-}
+# JWT cache — refreshed via _ow_signin(); avoids per-request credential reads
+_ow_jwt_cache: dict = {"token": None}
 
 logging.basicConfig(
     level=logging.INFO,
@@ -103,156 +97,171 @@ def _cleanup_orphans():
 def _first_boot_configure():
     """
     Configure Open WebUI on first boot:
-      1. Create an admin API key and persist it to OW_API_KEY_FILE
-      2. Apply branding + model config
-      3. Create the base (no-pack) model entry
+      1. Sign in as OW default admin to obtain JWT
+      2. Create the base (no-pack) model entry
+    OW branding config (WEBUI_NAME, DEFAULT_MODELS, ENABLE_SIGNUP) is handled
+    entirely via docker-compose.yml env vars — no API call required.
     Returns True on success, False if OW is unreachable.
     """
-    # OW starts with no auth (WEBUI_AUTH=False), so the admin key is
-    # generated via the /api/v1/auths/api_key endpoint on the default admin.
-    # Since auth is disabled we can hit the API directly without a token first.
     try:
-        resp = requests.post(
-            f"{OW_BASE_URL}/api/v1/auths/api_key",
-            json={},
-            timeout=10,
-        )
-        if resp.status_code == 200:
-            api_key = resp.json().get("api_key") or resp.json().get("key")
-            if api_key:
-                OW_API_KEY_FILE.write_text(api_key)
-                log.info("OW admin API key generated and saved")
-        else:
-            log.warning("Could not generate OW API key (status %d) — proceeding without", resp.status_code)
-            api_key = None
-    except requests.RequestException as e:
-        log.error("OW unreachable during first-boot key generation: %s", e)
+        _ow_signin()
+        log.info("OW admin sign-in successful")
+    except Exception as e:
+        log.error("OW unreachable during first-boot: %s", e)
         return False
 
-    # Apply config (tolerates missing API key — OW accepts unauthenticated
-    # config writes when WEBUI_AUTH=False)
-    if not _apply_ow_config(api_key):
-        return False
-
-    # Create the base model entry (no system prompt — "no pack active" state)
     _create_or_update_ow_model(
         model_id="survivoros-base",
         name="SurvivorOS — No Pack Active",
         system_prompt="",
-        api_key=api_key,
     )
-
     return True
 
 
-def _get_ow_api_key():
-    """Load persisted OW API key, or None if not generated yet."""
-    if OW_API_KEY_FILE.exists():
-        return OW_API_KEY_FILE.read_text().strip() or None
-    return None
+def _ow_signin():
+    """
+    Sign in as the default OW admin account and cache the JWT.
+    OW creates admin@localhost / admin on first start when WEBUI_AUTH=False.
+    API key creation is disabled in this environment — JWT is the only auth path.
+    """
+    resp = requests.post(
+        f"{OW_BASE_URL}/api/v1/auths/signin",
+        json={"email": "admin@localhost", "password": "admin"},
+        timeout=10,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"OW signin failed {resp.status_code}: {resp.text[:100]}")
+    token = resp.json().get("token")
+    if not token:
+        raise RuntimeError("OW signin response missing token")
+    _ow_jwt_cache["token"] = token
+    log.debug("OW JWT refreshed")
+    return token
 
 
-def _ow_headers(api_key=None):
-    key = api_key or _get_ow_api_key()
-    if key:
-        return {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-    return {"Content-Type": "application/json"}
+def _ow_headers():
+    """Return auth headers, signing in first if no cached token."""
+    if not _ow_jwt_cache["token"]:
+        _ow_signin()
+    return {
+        "Authorization": f"Bearer {_ow_jwt_cache['token']}",
+        "Content-Type": "application/json",
+    }
 
 
-def _apply_ow_config(api_key=None):
-    """Push branding/model config to OW. Returns True on success."""
-    try:
-        resp = requests.post(
-            f"{OW_BASE_URL}/api/v1/configs/",
-            headers=_ow_headers(api_key),
-            json={
-                "ui": {
-                    "default_models": OLLAMA_MODEL,
-                    "enable_signup": False,
-                },
-            },
-            timeout=10,
+def _ow_request(method, path, **kwargs):
+    """
+    Authenticated OW request with automatic token refresh on expiry.
+    OW JWTs expire in ~28 days; re-signin transparently on 401 unless
+    the 401 means "already registered" (model-create duplicate, not auth).
+    """
+    resp = requests.request(
+        method, f"{OW_BASE_URL}{path}", headers=_ow_headers(), timeout=10, **kwargs
+    )
+    if resp.status_code == 401 and "already registered" not in resp.text:
+        log.debug("OW 401 on %s %s — refreshing JWT", method, path)
+        _ow_jwt_cache["token"] = None
+        resp = requests.request(
+            method, f"{OW_BASE_URL}{path}", headers=_ow_headers(), timeout=10, **kwargs
         )
-        if resp.status_code not in (200, 201):
-            log.warning("OW config POST returned %d: %s", resp.status_code, resp.text[:200])
-        else:
-            log.info("OW config applied successfully")
-        return True
-    except requests.RequestException as e:
-        log.error("OW unreachable during config apply: %s", e)
-        return False
+    return resp
+
+
+def _apply_ow_config():
+    """
+    No-op: OW branding and model config are set entirely via env vars in
+    docker-compose.yml (WEBUI_NAME, DEFAULT_MODELS, ENABLE_SIGNUP, WEBUI_AUTH).
+    POST /api/v1/configs/ returns 405 in OW 0.8.10 — not a supported endpoint.
+    """
+    log.info("OW config managed via env vars — no API config call needed")
+    return True
 
 
 def _check_config_drift():
     """
-    On every startup (after first boot), verify OW config matches expectations.
-    Re-apply if drift is detected. Logs a warning but does not fail startup.
+    On every startup (after first boot), verify the survivoros-base model entry
+    exists in OW. If missing (e.g. OW DB wiped, container recreated), recreate it.
+    Also recreates the active pack's model entry if it disappeared.
+    Logs warnings but does not fail startup.
     """
     try:
-        resp = requests.get(
-            f"{OW_BASE_URL}/api/v1/configs/",
-            headers=_ow_headers(),
-            timeout=10,
-        )
+        resp = _ow_request("GET", "/api/v1/models")
         if resp.status_code != 200:
-            log.warning("Config drift check: OW returned %d — skipping", resp.status_code)
+            log.warning("Config drift check: OW models list returned %d — skipping", resp.status_code)
             return
 
-        current = resp.json()
-        ui = current.get("ui", {})
-        drift_detected = (
-            ui.get("default_models") != OLLAMA_MODEL
-            or ui.get("enable_signup") is not False
-        )
+        model_ids = {m["id"] for m in resp.json().get("data", [])}
 
-        if drift_detected:
-            log.warning("OW config drift detected — re-applying configuration")
-            _apply_ow_config()
+        if "survivoros-base" not in model_ids:
+            log.warning("OW model 'survivoros-base' missing — recreating (DB drift?)")
+            _create_or_update_ow_model("survivoros-base", "SurvivorOS — No Pack Active", "")
         else:
-            log.info("OW config drift check: OK")
+            log.info("OW config drift check: survivoros-base present ✓")
 
-    except requests.RequestException as e:
-        log.warning("Config drift check failed (OW unreachable?): %s", e)
+        # Also check whether the active pack's model entry is still there
+        try:
+            state = _read_state()
+        except (json.JSONDecodeError, OSError):
+            return
+        active = state.get("active_pack")
+        if active:
+            active_model_id = f"survivoros-{active}"
+            if active_model_id not in model_ids:
+                pack = state.get("packs", {}).get(active, {})
+                log.warning("OW model for active pack '%s' missing — recreating", active)
+                _create_or_update_ow_model(
+                    active_model_id,
+                    pack.get("name", active),
+                    pack.get("system_prompt", ""),
+                )
+
+    except Exception as e:
+        log.warning("Config drift check failed: %s", e)
 
 
-def _create_or_update_ow_model(model_id, name, system_prompt, api_key=None):
+def _create_or_update_ow_model(model_id, name, system_prompt):
     """
     Create or update a custom OW model entry with a system prompt.
-    Uses POST /api/v1/models/model/update (idempotent — creates if absent).
+    Strategy: try create first; if OW returns 401 "already registered",
+    fall through to update. Update requires ?id= query param AND id in body.
     """
     payload = {
         "id": model_id,
         "base_model_id": OLLAMA_MODEL,
         "name": name,
-        "meta": {"description": f"SurvivorOS domain pack: {name}"},
+        "meta": {"description": f"SurvivorOS domain pack: {name}", "capabilities": {}},
         "params": {"system": system_prompt},
         "is_active": True,
     }
     try:
-        # Try update first; fall back to create if model doesn't exist
-        resp = requests.post(
-            f"{OW_BASE_URL}/api/v1/models/model/update",
-            headers=_ow_headers(api_key),
-            json=payload,
-            timeout=10,
-        )
-        if resp.status_code == 404:
-            resp = requests.post(
-                f"{OW_BASE_URL}/api/v1/models/create",
-                headers=_ow_headers(api_key),
-                json=payload,
-                timeout=10,
-            )
-        if resp.status_code not in (200, 201):
+        resp = _ow_request("POST", "/api/v1/models/create", json=payload)
+        if resp.status_code in (200, 201):
+            log.info("OW model '%s' created", model_id)
+            return True
+        # OW returns 401 with "already registered" for duplicate model IDs (not a real auth error)
+        if resp.status_code == 401 and "already registered" in resp.text:
+            log.debug("OW model '%s' exists — updating", model_id)
+        else:
             log.error(
-                "Failed to create/update OW model %s: %d %s",
+                "OW model create failed for '%s': %d %s",
                 model_id, resp.status_code, resp.text[:200],
             )
             return False
-        log.info("OW model '%s' updated (system prompt len=%d)", model_id, len(system_prompt))
-        return True
+
+        # Update requires ?id= query param AND id field in body
+        resp = _ow_request(
+            "POST", f"/api/v1/models/model/update?id={model_id}", json=payload
+        )
+        if resp.status_code in (200, 201):
+            log.info("OW model '%s' updated (system_prompt len=%d)", model_id, len(system_prompt))
+            return True
+        log.error(
+            "OW model update failed for '%s': %d %s",
+            model_id, resp.status_code, resp.text[:200],
+        )
+        return False
     except requests.RequestException as e:
-        log.error("OW unreachable during model update: %s", e)
+        log.error("OW unreachable during model create/update: %s", e)
         return False
 
 
@@ -388,6 +397,10 @@ def upload_pack():
                     return jsonify({"error": f"pack_manifest.json missing required field: {field}"}), 400
 
             pack_id = manifest["id"]
+
+            # Validate pack_id to prevent path traversal via manifest
+            if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$', pack_id):
+                return jsonify({"error": "pack_manifest.json id must contain only letters, numbers, hyphens, and underscores"}), 400
 
             # Duplicate check
             try:

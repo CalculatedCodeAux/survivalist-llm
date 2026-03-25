@@ -108,6 +108,25 @@ class TestUpload:
         assert "traversal" in resp.get_json()["error"].lower()
         assert not any(packs_dir.glob("tmp-*"))
 
+    def test_manifest_id_path_traversal_rejected(self, flask_app, tmp_path):
+        """Manifest id with invalid chars (e.g. spaces, dots) must be rejected."""
+        client, packs_dir, *_ = flask_app
+        # Build a zip with a clean zim filename but a malicious manifest id.
+        # Using "evil pack" (space) — passes zip-entry checks but fails id regex.
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            manifest = {"id": "evil pack", "name": "Evil", "version": "1.0"}
+            zf.writestr("pack_manifest.json", json.dumps(manifest))
+            zf.writestr("data.zim", b"FAKE")
+        buf.seek(0)
+        data = {"file": (buf, "evil.survivorpack")}
+        resp = client.post("/admin/packs/upload",
+                           data=data, content_type="multipart/form-data")
+        assert resp.status_code == 400
+        assert "id" in resp.get_json()["error"].lower()
+        # Nothing escaped into packs_dir
+        assert not list(packs_dir.glob("evil*"))
+
     def test_duplicate_pack_id_returns_409(self, flask_app, tmp_path):
         client, packs_dir, state_dir, mod = flask_app
         # Manually install a pack into state
@@ -202,8 +221,9 @@ class TestActivate:
         client, packs_dir, state_dir, mod = flask_app
         self._install_pack(mod, packs_dir, "wildfire")
 
-        with patch("requests.post") as mock_post:
-            mock_post.return_value.status_code = 200
+        with patch("requests.request") as mock_req:
+            mock_req.return_value.status_code = 200
+            mock_req.return_value.text = ""
             resp = client.post("/admin/packs/wildfire/activate")
 
         assert resp.status_code == 200
@@ -214,21 +234,23 @@ class TestActivate:
         client, packs_dir, state_dir, mod = flask_app
         self._install_pack(mod, packs_dir, "wildfire")
 
-        with patch("requests.post") as mock_post:
-            mock_post.return_value.status_code = 200
+        with patch("requests.request") as mock_req:
+            mock_req.return_value.status_code = 200
+            mock_req.return_value.text = ""
             client.post("/admin/packs/wildfire/activate")
 
-        # Should have called OW API with the system prompt
-        ow_calls = [str(c) for c in mock_post.call_args_list]
-        assert any("wildfire" in c or "models" in c for c in ow_calls)
+        # Should have called OW models/create endpoint with pack model id
+        req_calls = [str(c) for c in mock_req.call_args_list]
+        assert any("models" in c for c in req_calls)
 
     def test_activate_no_prior_active_pack(self, flask_app, tmp_path):
         """Fresh device: no active pack → activating first pack should work."""
         client, packs_dir, state_dir, mod = flask_app
         self._install_pack(mod, packs_dir, "medical")
 
-        with patch("requests.post") as mock_post:
-            mock_post.return_value.status_code = 200
+        with patch("requests.request") as mock_req:
+            mock_req.return_value.status_code = 200
+            mock_req.return_value.text = ""
             resp = client.post("/admin/packs/medical/activate")
 
         assert resp.status_code == 200
@@ -239,9 +261,9 @@ class TestActivate:
         client, packs_dir, state_dir, mod = flask_app
         self._install_pack(mod, packs_dir, "wildfire")
 
-        with patch("requests.post") as mock_post:
-            mock_post.return_value.status_code = 500
-            mock_post.return_value.text = "Internal Server Error"
+        with patch("requests.request") as mock_req:
+            mock_req.return_value.status_code = 500
+            mock_req.return_value.text = "Internal Server Error"
             resp = client.post("/admin/packs/wildfire/activate")
 
         assert resp.status_code == 500
@@ -273,8 +295,9 @@ class TestDeactivate:
         state["active_pack"] = "wildfire"
         mod._write_state(state)
 
-        with patch("requests.post") as mock_post:
-            mock_post.return_value.status_code = 200
+        with patch("requests.request") as mock_req:
+            mock_req.return_value.status_code = 200
+            mock_req.return_value.text = ""
             resp = client.post("/admin/packs/wildfire/deactivate")
 
         assert resp.status_code == 200
@@ -290,9 +313,9 @@ class TestDeactivate:
         state["active_pack"] = "wildfire"
         mod._write_state(state)
 
-        with patch("requests.post") as mock_post:
-            mock_post.return_value.status_code = 500
-            mock_post.return_value.text = "error"
+        with patch("requests.request") as mock_req:
+            mock_req.return_value.status_code = 500
+            mock_req.return_value.text = "error"
             resp = client.post("/admin/packs/wildfire/deactivate")
 
         assert resp.status_code == 500
@@ -393,43 +416,54 @@ class TestStartup:
         orphan.mkdir()
         (orphan / "upload.zip").write_bytes(b"partial")
 
-        client, mod = _make_app_and_check(packs_dir, state_dir)
+        with patch("requests.post") as mock_post, \
+             patch("requests.request") as mock_req:
+            mock_post.return_value.status_code = 200
+            mock_post.return_value.json.return_value = {"token": "test-jwt"}
+            mock_post.return_value.text = ""
+            mock_req.return_value.status_code = 200
+            mock_req.return_value.json.return_value = {"data": []}
+            mock_req.return_value.text = ""
+            client, mod = _make_app_and_check(packs_dir, state_dir)
+
         assert not orphan.exists()
 
     def test_first_boot_runs_once_when_sentinel_absent(self, tmp_dirs):
-        """Without sentinel, OW config API must be called."""
+        """Without sentinel, OW signin and model creation must be called."""
         packs_dir, state_dir = tmp_dirs
         sentinel = state_dir / ".first-boot-complete"
         assert not sentinel.exists()
 
         with patch("requests.post") as mock_post, \
-             patch("requests.get") as mock_get:
+             patch("requests.request") as mock_req:
             mock_post.return_value.status_code = 200
-            mock_post.return_value.json.return_value = {"api_key": "sk-test"}
-            mock_get.return_value.status_code = 200
-            mock_get.return_value.json.return_value = {
-                "ui": {"default_models": "llama3.2:3b", "enable_signup": False}
-            }
+            mock_post.return_value.json.return_value = {"token": "test-jwt"}
+            mock_post.return_value.text = ""
+            mock_req.return_value.status_code = 200
+            mock_req.return_value.json.return_value = {"data": []}
+            mock_req.return_value.text = ""
             client, mod = _make_app_and_check(packs_dir, state_dir)
+            # signin called during first-boot
             assert mock_post.called
         assert sentinel.exists()
 
     def test_first_boot_skipped_when_sentinel_present(self, tmp_dirs):
-        """With sentinel present, first-boot OW config must NOT be called."""
+        """With sentinel present, first-boot key-gen endpoint must NOT be called."""
         packs_dir, state_dir = tmp_dirs
         (state_dir / ".first-boot-complete").touch()
 
         with patch("requests.post") as mock_post, \
-             patch("requests.get") as mock_get:
-            mock_get.return_value.status_code = 200
-            mock_get.return_value.json.return_value = {
-                "ui": {"default_models": "llama3.2:3b", "enable_signup": False}
-            }
+             patch("requests.request") as mock_req:
+            mock_post.return_value.status_code = 200
+            mock_post.return_value.json.return_value = {"token": "test-jwt"}
+            mock_post.return_value.text = ""
+            mock_req.return_value.status_code = 200
+            mock_req.return_value.json.return_value = {"data": [{"id": "survivoros-base"}]}
+            mock_req.return_value.text = ""
             _make_app_and_check(packs_dir, state_dir)
-            # POST only called for config drift check (GET not POST)
+            # Old API key creation endpoint must never be called
             post_calls = [str(c) for c in mock_post.call_args_list]
-            # No calls to /api/v1/auths/api_key (first-boot key gen)
-            assert not any("auths" in c for c in post_calls)
+            assert not any("/api/v1/auths/api_key" in c for c in post_calls)
 
     def test_first_boot_sentinel_not_written_when_ow_down(self, tmp_dirs):
         """If OW is unreachable during first boot, sentinel must NOT be written."""
@@ -448,7 +482,17 @@ class TestStartup:
         packs_dir, state_dir = tmp_dirs
         lib = packs_dir / "library.xml"
         assert not lib.exists()
-        client, mod = _make_app_and_check(packs_dir, state_dir)
+
+        with patch("requests.post") as mock_post, \
+             patch("requests.request") as mock_req:
+            mock_post.return_value.status_code = 200
+            mock_post.return_value.json.return_value = {"token": "test-jwt"}
+            mock_post.return_value.text = ""
+            mock_req.return_value.status_code = 200
+            mock_req.return_value.json.return_value = {"data": []}
+            mock_req.return_value.text = ""
+            client, mod = _make_app_and_check(packs_dir, state_dir)
+
         assert lib.exists()
         assert "<library" in lib.read_text()
 

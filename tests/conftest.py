@@ -77,11 +77,19 @@ def _make_app(packs_dir, state_dir, ow_post_status=200, ow_get_body=None):
         "OLLAMA_MODEL":     "llama3.2:3b",
     }
 
+    # Signin returns a JWT token (API key creation is disabled in OW 0.8.10)
     mock_post_response = MagicMock()
     mock_post_response.status_code = ow_post_status
-    mock_post_response.json.return_value = {"api_key": "sk-test-key"}
+    mock_post_response.json.return_value = {"token": "test-jwt"}
     mock_post_response.text = ""
 
+    # All authenticated OW API calls go through requests.request (via _ow_request)
+    mock_request_response = MagicMock()
+    mock_request_response.status_code = 200
+    mock_request_response.json.return_value = {"data": []}
+    mock_request_response.text = ""
+
+    # requests.get kept for completeness (not currently used by app code)
     mock_get_response = MagicMock()
     mock_get_response.status_code = 200
     mock_get_response.json.return_value = ow_get_body
@@ -92,8 +100,9 @@ def _make_app(packs_dir, state_dir, ow_post_status=200, ow_get_body=None):
             if key in ("app",):
                 del sys.modules[key]
 
-        with patch("requests.post", return_value=mock_post_response), \
-             patch("requests.get",  return_value=mock_get_response):
+        with patch("requests.post",    return_value=mock_post_response), \
+             patch("requests.request", return_value=mock_request_response), \
+             patch("requests.get",     return_value=mock_get_response):
             import app as app_module
             app_module.app.config["TESTING"] = True
             client = app_module.app.test_client()
