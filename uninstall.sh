@@ -188,8 +188,9 @@ http {
 }
 NGINX
   fi
-  systemctl reload nginx 2>/dev/null || true
-  ok "Restored nginx config."
+  systemctl stop nginx 2>/dev/null || true
+  systemctl disable nginx 2>/dev/null || true
+  ok "Stopped and disabled nginx."
 fi
 
 # ── Step 3: Remove Docker resources ──────────────────────────────────────────
