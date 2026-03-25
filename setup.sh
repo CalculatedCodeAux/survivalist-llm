@@ -275,7 +275,9 @@ ip addr add "${AP_IP}/24" dev "$IFACE"
 ip link set "$IFACE" up
 
 # Start hostapd (in background; systemd will track child processes)
-hostapd -B /opt/survivalist-llm/config/hostapd.conf \
+# Note: /etc/hostapd/survivalist.conf is the configured version (correct interface,
+# SSID, and passphrase). /opt/survivalist-llm/config/hostapd.conf is the template.
+hostapd -B /etc/hostapd/survivalist.conf \
   -f /opt/survivalist-llm/logs/hostapd.log
 
 # Start dnsmasq
@@ -328,6 +330,36 @@ WAIT
   chmod +x "$INSTALL_DIR/scripts/"*.sh
   chmod 700 "$INSTALL_DIR"          # Only root should read secrets
   ok "Directory structure created at $INSTALL_DIR"
+}
+
+# ── WiFi Takeover Warning ────────────────────────────────────────────────────
+warn_wifi_takeover() {
+  detect_wlan_interface   # Sets WLAN_IFACE so we can name it in the warning
+
+  echo ""
+  echo -e "${YELLOW}${BOLD}┌──────────────────────────────────────────────────────────────┐${NC}"
+  echo -e "${YELLOW}${BOLD}│  ⚠  WiFi ADAPTER TAKEOVER WARNING                            │${NC}"
+  echo -e "${YELLOW}${BOLD}│                                                              │${NC}"
+  printf "${YELLOW}${BOLD}│  Interface : %-48s│${NC}\n" "$WLAN_IFACE"
+  echo -e "${YELLOW}${BOLD}│                                                              │${NC}"
+  echo -e "${YELLOW}${BOLD}│  This setup will configure '$WLAN_IFACE' as a WiFi Access    │${NC}"
+  echo -e "${YELLOW}${BOLD}│  Point. The adapter will be DEDICATED to hosting the         │${NC}"
+  echo -e "${YELLOW}${BOLD}│  SurvivalistLLM network and will NO LONGER connect to        │${NC}"
+  echo -e "${YELLOW}${BOLD}│  the internet or any existing WiFi router.                  │${NC}"
+  echo -e "${YELLOW}${BOLD}│                                                              │${NC}"
+  echo -e "${YELLOW}${BOLD}│  If this PC relies on WiFi for internet, it will lose        │${NC}"
+  echo -e "${YELLOW}${BOLD}│  internet access after this step. A wired Ethernet           │${NC}"
+  echo -e "${YELLOW}${BOLD}│  connection is recommended for the host machine.             │${NC}"
+  echo -e "${YELLOW}${BOLD}│                                                              │${NC}"
+  echo -e "${YELLOW}${BOLD}│  To restore WiFi internet, run:  sudo bash uninstall.sh      │${NC}"
+  echo -e "${YELLOW}${BOLD}└──────────────────────────────────────────────────────────────┘${NC}"
+  echo ""
+
+  read -rp "  Continue and take over '$WLAN_IFACE' for the AP? [y/N] " _CONFIRM
+  case "$_CONFIRM" in
+    [yY]|[yY][eE][sS]) ok "Proceeding with WiFi takeover." ;;
+    *) die "Aborted by user. No changes made to network configuration." ;;
+  esac
 }
 
 # ── Step 4: Configure WiFi Access Point ────────────────────────────────────
@@ -579,6 +611,7 @@ main() {
   install_dependencies
   create_directories          # Must run before detect (copies detect_hardware.py)
   detect_and_select_model
+  warn_wifi_takeover          # Warn user before clobbering their WiFi adapter
   configure_ap
   patch_compose_for_gpu
   pull_images_and_model
