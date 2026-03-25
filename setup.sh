@@ -479,16 +479,22 @@ pull_images_and_model() {
   log "Downloading model: ${OLLAMA_MODEL}"
   log "(This is a one-time download. Progress is shown below.)"
 
-  # Start a temporary Ollama container for the pull
+  # Start a temporary Ollama container: launch the server in the background,
+  # wait for it to be ready, then pull. 'ollama pull' is a client command and
+  # requires a running 'ollama serve' — it cannot pull standalone.
   DOCKER_GPU_FLAG=""
   [[ "$GPU_TYPE" == "nvidia" ]] && DOCKER_GPU_FLAG="--gpus all"
 
   # shellcheck disable=SC2086  # intentional word-split for optional flag
   docker run --rm \
     -v "$INSTALL_DIR/models:/root/.ollama" \
+    -e "MODEL=${OLLAMA_MODEL}" \
     ${DOCKER_GPU_FLAG} \
+    --entrypoint /bin/sh \
     ollama/ollama:0.18.2 \
-    pull "${OLLAMA_MODEL}" \
+    -c 'ollama serve >/dev/null 2>&1 &
+        for i in $(seq 1 30); do ollama list >/dev/null 2>&1 && break || sleep 1; done
+        ollama pull "$MODEL"' \
     || die "Model download failed. Check your internet connection and model name."
 
   ok "Model '${OLLAMA_MODEL}' downloaded successfully."
