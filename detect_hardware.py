@@ -9,6 +9,7 @@ import subprocess
 import sys
 import json
 import os
+import platform
 import re
 
 
@@ -105,6 +106,85 @@ MODEL_CATALOGUE = [
         "reason": "Smallest viable model — last resort for ≤4 GB RAM machines.",
     },
 ]
+
+
+# ---------------------------------------------------------------------------
+# Product tiers — maps detected hardware to a named product tier.
+# Used by setup.sh for display messages and by marketing tooling.
+#
+# Tier        | Hardware              | Default model | Expected t/s
+# ------------|-----------------------|---------------|-------------
+# pi          | Raspberry Pi (ARM64)  | 3B Q4         | 5-8 t/s
+# n100        | Intel N100 / x86_64   | 3B Q4         | 18-25 t/s
+# performance | x86_64 with dGPU      | 7B+ GPU       | 30-60 t/s
+# unknown     | Other                 | auto-select   | varies
+#
+# On ARM we cap at 3B regardless of RAM — 7B on Pi 5 ARM runs at ~2-4 t/s
+# which feels broken to a first-time user.  Better to run 3B fast than 7B slow.
+# ---------------------------------------------------------------------------
+PRODUCT_TIERS = {
+    "pi":          {"display": "SurvivorBox (Pi Edition)", "max_model_id": "cpu-small"},
+    "n100":        {"display": "SurvivorBox (Standard)",   "max_model_id": "cpu-mid"},
+    "performance": {"display": "SurvivorBox (Performance)", "max_model_id": None},   # no cap
+    "unknown":     {"display": "SurvivorOS",               "max_model_id": None},
+}
+
+# Model ID order for tier capping — lower index = lighter model
+_MODEL_ID_ORDER = ["cpu-tiny", "cpu-small", "cpu-mid", "cpu-large",
+                   "gpu-small", "gpu-mid", "gpu-large"]
+
+
+def get_cpu_arch() -> str:
+    """Return normalised CPU architecture string: 'arm64', 'x86_64', or 'unknown'."""
+    machine = platform.machine().lower()
+    if machine in ("aarch64", "arm64", "armv8l"):
+        return "arm64"
+    if machine in ("x86_64", "amd64"):
+        return "x86_64"
+    return machine
+
+
+def detect_product_tier(arch: str, gpu: dict, ram_gb: float) -> str:
+    """
+    Classify hardware into a named product tier.
+
+    Tier caps only apply to hardware that resembles an actual SurvivorBox
+    product unit (≤ 16 GB RAM).  Dev machines and servers with more RAM
+    fall through to "unknown" so model selection is driven purely by RAM
+    capacity and the full catalogue is available.
+    """
+    has_gpu = gpu["type"] in ("nvidia", "amd") and gpu["driver_ok"] and gpu["vram_gb"] >= 2.5
+    if arch == "arm64":
+        return "pi"
+    if arch == "x86_64" and has_gpu:
+        return "performance"
+    if arch == "x86_64" and ram_gb <= 16.0:
+        # Looks like a product-unit N100 (8–16 GB is the normal config)
+        return "n100"
+    # Dev machine, server, or anything else — no cap, let RAM decide
+    return "unknown"
+
+
+def apply_tier_cap(model: dict, tier: str) -> dict:
+    """
+    If the detected tier has a max_model_id, ensure we don't select a
+    heavier model than the tier allows.  Returns the original or a lighter model.
+    """
+    max_id = PRODUCT_TIERS[tier]["max_model_id"]
+    if max_id is None:
+        return model  # no cap for this tier
+
+    current_idx = _MODEL_ID_ORDER.index(model["id"]) if model["id"] in _MODEL_ID_ORDER else 999
+    max_idx = _MODEL_ID_ORDER.index(max_id) if max_id in _MODEL_ID_ORDER else 999
+
+    if current_idx <= max_idx:
+        return model  # already within the cap
+
+    # Walk back to the heaviest model that fits the cap
+    for candidate in MODEL_CATALOGUE:
+        if candidate["id"] == max_id:
+            return candidate
+    return model  # fallback: shouldn't happen
 
 
 def run(cmd: list[str], timeout: int = 10) -> tuple[int, str, str]:
@@ -260,14 +340,19 @@ def main():
 
     cpu_cores = get_cpu_cores()
     gpu = probe_gpu()
+    arch = get_cpu_arch()
+    tier = detect_product_tier(arch, gpu, ram_gb)
 
     print(f"  RAM:        {ram_gb} GB", file=sys.stderr)
     print(f"  CPU cores:  {cpu_cores}", file=sys.stderr)
+    print(f"  Arch:       {arch}", file=sys.stderr)
     print(f"  GPU type:   {gpu['type']}", file=sys.stderr)
     print(f"  VRAM:       {gpu['vram_gb']} GB", file=sys.stderr)
     print(f"  Driver OK:  {gpu['driver_ok']}", file=sys.stderr)
+    print(f"  Tier:       {tier} ({PRODUCT_TIERS[tier]['display']})", file=sys.stderr)
 
     model = select_model(ram_gb, gpu)
+    model = apply_tier_cap(model, tier)
     ollama_env = compute_ollama_env(ram_gb, cpu_cores, model)
 
     print(f"\n[detect_hardware] Selected model: {model['display']}", file=sys.stderr)
@@ -277,8 +362,11 @@ def main():
         "hardware": {
             "ram_gb": ram_gb,
             "cpu_cores": cpu_cores,
+            "arch": arch,
             "gpu": gpu,
         },
+        "tier": tier,
+        "tier_display": PRODUCT_TIERS[tier]["display"],
         "model": model,
         "ollama_env": ollama_env,
     }

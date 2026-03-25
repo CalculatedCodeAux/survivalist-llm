@@ -71,11 +71,29 @@ Items deferred from CEO Review (2026-03-24) and design session.
 **Blocks on:** Pack content completion (Wildfire + Medical), Gumroad account setup.
 **Priority:** P2 — after pack content is done
 
-### SurvivorBox Hardware
-**What:** Source Pi 5 8GB + IP54 enclosure + active cooler + USB-C power setup. Pre-flash SD cards. Fulfill as complete plug-in appliance at $149-179.
-**Why:** Gary's tier. No terminal, no setup. The real long-term product.
-**Blocks on:** 100+ SD card sales (demand signal), FCC/CE certification if WiFi AP is baked in.
+### SurvivorBox Hardware — Two Tiers
+
+#### SurvivorBox Pi (Entry)
+**What:** Raspberry Pi 5 8GB + enclosure + active cooler + USB-C power. Pre-flashed. Plug-and-go.
+**Model:** Qwen 2.5 3B Q4 — forced by detect_hardware.py ARM tier cap (~6 t/s, 20-35s typical response)
+**Price target:** ~$179 retail
+**Why:** Entry price point. Works well for camping — you're not in a hurry.
+**Blocks on:** Enclosure sourcing, FCC/CE cert if WiFi AP is baked in.
 **Priority:** P2 — after Phase 1 demand validated
+
+#### SurvivorBox Standard (N100)
+**What:** Intel N100 mini PC (Beelink EQ12 or equivalent, 8GB+ RAM). Pre-flashed. Plug-and-go via 12V/19V barrel. Include adapter in box — most N100 units don't support USB-C PD.
+**Model:** Qwen 2.5 3B Q4 (~20 t/s, 5-10s typical response)
+**Price target:** ~$249 retail
+**Why:** Recommended tier. Fast enough to feel instant for reference Q&A. x86 = existing Docker stack, no porting.
+**Validation gate:** Benchmark Qwen 2.5 3B on N100 — median first-token must be <5s before ordering inventory.
+**Priority:** P2 — after benchmark validation
+
+#### Marketing Site
+**What:** Static site at `marketing/index.html` — two-tier comparison with live speed demo animation.
+**Status:** Built. Speed constants (PI_TTFT_MS, PI_TPS, N100_TTFT_MS, N100_TPS) are estimates — update after real benchmark.
+**Next steps:** Run benchmark → update JS constants → deploy to static host (GitHub Pages / Netlify / Cloudflare Pages).
+**Priority:** P2 — update constants after benchmark, deploy before any external marketing push
 
 ---
 

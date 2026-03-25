@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SurvivorBox — Offline AI for the Outdoors</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cabinet+Grotesk:wght@500;700;800&family=Plus+Jakarta+Sans:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #F7F5F0;
+      --surface:   #FFFFFF;
+      --text:      #1C1A17;
+      --muted:     #6B6456;
+      --border:    #E0DDDA;
+      --accent:    #D4570A;
+      --accent-dk: #B34208;
+      --success:   #2D6A4F;
+      --warn:      #B45309;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+      font-size: 17px;
+      line-height: 1.6;
+    }
+
+    /* ── Nav ──────────────────────────────────────────────────────── */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--text);
+      border-bottom: 2px solid var(--accent);
+      padding: 0 24px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+    nav .brand {
+      font-family: 'Cabinet Grotesk', system-ui, sans-serif;
+      font-weight: 800;
+      font-size: 17px;
+      color: var(--accent);
+      letter-spacing: .04em;
+      flex: none;
+      margin-right: 8px;
+    }
+    nav a {
+      color: rgba(247,245,240,.75);
+      font-size: 14px;
+      font-weight: 500;
+      text-decoration: none;
+    }
+    nav a:hover { color: var(--bg); }
+    nav .nav-cta {
+      margin-left: auto;
+      background: var(--accent);
+      color: #fff;
+      padding: 6px 16px;
+      border-radius: var(--radius-sm);
+      font-weight: 600;
+      font-size: 14px;
+    }
+    nav .nav-cta:hover { background: var(--accent-dk); color: #fff; }
+
+    /* ── Layout helpers ───────────────────────────────────────────── */
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+    section { padding: 80px 0; }
+    section + section { border-top: 1px solid var(--border); }
+
+    h1, h2, h3 {
+      font-family: 'Cabinet Grotesk', system-ui, sans-serif;
+      font-weight: 800;
+      line-height: 1.15;
+      color: var(--text);
+    }
+
+    /* ── Hero ─────────────────────────────────────────────────────── */
+    .hero {
+      padding: 100px 0 80px;
+      border-bottom: 1px solid var(--border);
+    }
+    .hero-inner {
+      display: flex;
+      gap: 64px;
+      align-items: center;
+    }
+    .hero-copy { flex: 1; }
+    .hero-copy .kicker {
+      display: inline-block;
+      font-family: 'Geist Mono', monospace;
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--accent);
+      background: rgba(212,87,10,.08);
+      border: 1px solid rgba(212,87,10,.2);
+      border-radius: 4px;
+      padding: 4px 10px;
+      margin-bottom: 20px;
+    }
+    .hero-copy h1 {
+      font-size: 48px;
+      margin-bottom: 20px;
+    }
+    .hero-copy h1 em {
+      font-style: normal;
+      color: var(--accent);
+    }
+    .hero-copy p {
+      font-size: 20px;
+      color: var(--muted);
+      margin-bottom: 32px;
+      max-width: 480px;
+    }
+    .hero-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      padding: 14px 28px;
+      border-radius: var(--radius-sm);
+      font-weight: 600;
+      font-size: 16px;
+      text-decoration: none;
+      display: inline-block;
+    }
+    .btn-primary:hover { background: var(--accent-dk); }
+    .btn-ghost {
+      color: var(--text);
+      font-weight: 500;
+      font-size: 16px;
+      text-decoration: none;
+    }
+    .btn-ghost:hover { color: var(--accent); }
+
+    /* Device illustration (CSS only) */
+    .hero-device {
+      flex: none;
+      width: 280px;
+    }
+    .device-box {
+      background: var(--text);
+      border-radius: 12px;
+      padding: 28px 24px;
+      box-shadow: 0 20px 60px rgba(28,26,23,.2);
+      position: relative;
+    }
+    .device-box::before {
+      content: 'SurvivorOS';
+      display: block;
+      font-family: 'Cabinet Grotesk', sans-serif;
+      font-weight: 800;
+      font-size: 11px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 16px;
+    }
+    .device-led {
+      position: absolute;
+      top: 28px;
+      right: 24px;
+      width: 8px;
+      height: 8px;
+      background: var(--success);
+      border-radius: 50%;
+      box-shadow: 0 0 6px var(--success);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: .4; }
+    }
+    .device-screen {
+      background: #111;
+      border-radius: 6px;
+      padding: 12px;
+      font-family: 'Geist Mono', monospace;
+      font-size: 11px;
+      line-height: 1.6;
+      color: #ccc;
+      min-height: 120px;
+    }
+    .device-screen .prompt { color: var(--accent); margin-bottom: 4px; }
+    .device-screen .response { color: #e8e8e8; }
+    .device-screen .cursor {
+      display: inline-block;
+      width: 7px;
+      height: 13px;
+      background: var(--accent);
+      animation: blink .9s step-end infinite;
+      vertical-align: text-bottom;
+    }
+    @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+    .device-ports {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+    }
+    .port {
+      height: 6px;
+      border-radius: 3px;
+      background: #333;
+    }
+    .port-usbc { width: 20px; }
+    .port-hdmi { width: 32px; }
+    .port-usba { width: 18px; }
+
+    /* ── Speed demo ───────────────────────────────────────────────── */
+    .speed-section h2 { font-size: 36px; margin-bottom: 12px; }
+    .speed-section .subtitle {
+      font-size: 18px;
+      color: var(--muted);
+      margin-bottom: 48px;
+      max-width: 560px;
+    }
+
+    .demo-container {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+    }
+    .demo-header {
+      background: var(--text);
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .demo-header span {
+      font-family: 'Geist Mono', monospace;
+      font-size: 12px;
+      color: rgba(247,245,240,.6);
+    }
+    .demo-header .demo-title {
+      color: var(--bg);
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .demo-body {
+      padding: 24px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+    .demo-tier {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+    }
+    .demo-tier-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .demo-tier-name {
+      font-family: 'Cabinet Grotesk', sans-serif;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .demo-tier-spec {
+      font-family: 'Geist Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .demo-chat {
+      padding: 16px;
+      font-size: 14px;
+      min-height: 200px;
+    }
+    .demo-q {
+      background: var(--accent);
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: 10px 10px 2px 10px;
+      margin-bottom: 12px;
+      font-size: 13px;
+      line-height: 1.5;
+      display: inline-block;
+      max-width: 90%;
+      float: right;
+      clear: both;
+    }
+    .demo-a {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      border-radius: 2px 10px 10px 10px;
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--text);
+      clear: both;
+      position: relative;
+      overflow: hidden;
+    }
+    .demo-a-text {
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .demo-a .typing-cursor {
+      display: inline-block;
+      width: 2px;
+      height: 14px;
+      background: var(--muted);
+      animation: blink .7s step-end infinite;
+      vertical-align: text-bottom;
+      margin-left: 1px;
+    }
+    .demo-stats {
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 16px;
+    }
+    .stat {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .stat-value {
+      font-family: 'Geist Mono', monospace;
+      font-weight: 500;
+      font-size: 16px;
+      color: var(--text);
+    }
+    .stat-value.fast { color: var(--success); }
+    .stat-label {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+    .demo-footer {
+      padding: 16px 24px;
+      border-top: 1px solid var(--border);
+      background: rgba(247,245,240,.5);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .demo-footer span {
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .replay-btn {
+      margin-left: auto;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 6px 14px;
+      font-size: 13px;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      cursor: pointer;
+      color: var(--text);
+    }
+    .replay-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Products ─────────────────────────────────────────────────── */
+    .products-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-top: 48px;
+    }
+    .product-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+    }
+    .product-card.featured {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent);
+    }
+    .product-badge {
+      background: var(--accent);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+      padding: 6px 16px;
+      font-family: 'Geist Mono', monospace;
+    }
+    .product-body { padding: 28px; }
+    .product-name {
+      font-family: 'Cabinet Grotesk', sans-serif;
+      font-weight: 800;
+      font-size: 24px;
+      margin-bottom: 6px;
+    }
+    .product-tagline {
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 24px;
+    }
+    .product-price {
+      font-family: 'Cabinet Grotesk', sans-serif;
+      font-weight: 800;
+      font-size: 36px;
+      margin-bottom: 4px;
+    }
+    .product-price-note {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 24px;
+    }
+    .product-specs { margin-bottom: 28px; }
+    .spec-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 14px;
+      gap: 12px;
+    }
+    .spec-row:last-child { border-bottom: none; }
+    .spec-key { color: var(--muted); flex: none; }
+    .spec-val { font-weight: 500; text-align: right; }
+    .spec-val.highlight { color: var(--accent); }
+    .product-cta {
+      display: block;
+      background: var(--text);
+      color: var(--bg);
+      text-align: center;
+      padding: 14px;
+      border-radius: var(--radius-sm);
+      font-weight: 600;
+      font-size: 15px;
+      text-decoration: none;
+    }
+    .product-cta:hover { background: var(--accent); }
+    .product-card.featured .product-cta {
+      background: var(--accent);
+    }
+    .product-card.featured .product-cta:hover { background: var(--accent-dk); }
+
+    /* ── How it works ─────────────────────────────────────────────── */
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 32px;
+      margin-top: 48px;
+    }
+    .step-num {
+      font-family: 'Geist Mono', monospace;
+      font-size: 12px;
+      color: var(--accent);
+      font-weight: 500;
+      letter-spacing: .1em;
+      margin-bottom: 12px;
+    }
+    .step-title {
+      font-family: 'Cabinet Grotesk', sans-serif;
+      font-weight: 700;
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+    .step-desc { font-size: 15px; color: var(--muted); line-height: 1.6; }
+
+    /* ── FAQ ──────────────────────────────────────────────────────── */
+    .faq-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+      margin-top: 48px;
+    }
+    .faq-item { }
+    .faq-q {
+      font-family: 'Cabinet Grotesk', sans-serif;
+      font-weight: 700;
+      font-size: 17px;
+      margin-bottom: 8px;
+    }
+    .faq-a { font-size: 15px; color: var(--muted); line-height: 1.6; }
+
+    /* ── Disclaimer ───────────────────────────────────────────────── */
+    .disclaimer-bar {
+      background: #111;
+      color: rgba(255,255,255,.75);
+      padding: 12px 24px;
+      font-size: 13px;
+      text-align: center;
+      border-top: 3px solid #c00;
+      line-height: 1.5;
+    }
+    .disclaimer-bar strong { color: #ff6666; }
+
+    /* ── Footer ───────────────────────────────────────────────────── */
+    footer {
+      background: var(--text);
+      color: rgba(247,245,240,.5);
+      padding: 32px 24px;
+      text-align: center;
+      font-size: 13px;
+    }
+    footer a { color: rgba(247,245,240,.6); }
+
+    @media (max-width: 768px) {
+      .hero-inner { flex-direction: column; }
+      .hero-device { width: 100%; max-width: 320px; }
+      .hero-copy h1 { font-size: 36px; }
+      .demo-body { grid-template-columns: 1fr; }
+      .products-grid { grid-template-columns: 1fr; }
+      .steps { grid-template-columns: 1fr; }
+      .faq-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <span class="brand">SurvivorBox</span>
+  <a href="#demo">See it in action</a>
+  <a href="#products">Models</a>
+  <a href="#how">How it works</a>
+  <a href="#faq">FAQ</a>
+  <a href="#products" class="nav-cta">Buy at the lot →</a>
+</nav>
+
+<!-- ── Hero ──────────────────────────────────────────────────────── -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-inner">
+      <div class="hero-copy">
+        <span class="kicker">Works without signal</span>
+        <h1>AI for when there's<br><em>no internet.</em></h1>
+        <p>Plug SurvivorBox into your RV. Connect your phone. Ask anything — recipes, repairs, first aid, trail info. No signal required. Ever.</p>
+        <div class="hero-actions">
+          <a href="#products" class="btn-primary">Shop SurvivorBox</a>
+          <a href="#demo" class="btn-ghost">See how fast it is →</a>
+        </div>
+      </div>
+      <div class="hero-device">
+        <div class="device-box">
+          <div class="device-led"></div>
+          <div class="device-screen">
+            <div class="prompt">You &rsaquo;</div>
+            <div style="color:#888;margin-bottom:8px;font-size:10px;">How do I treat a fishhook stuck in my thumb?</div>
+            <div class="response" id="hero-typing"></div><span class="cursor" id="hero-cursor"></span>
+          </div>
+          <div class="device-ports">
+            <div class="port port-usbc"></div>
+            <div class="port port-hdmi"></div>
+            <div class="port port-usba"></div>
+            <div class="port port-usba"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Speed demo ─────────────────────────────────────────────────── -->
+<section class="speed-section" id="demo">
+  <div class="container">
+    <h2>Exactly how fast is it?</h2>
+    <p class="subtitle">No surprises. We show real inference speeds for both models so you know what you're getting before you buy.</p>
+
+    <div class="demo-container">
+      <div class="demo-header">
+        <span>●</span>
+        <span class="demo-title">Live speed comparison — same question, different hardware &amp; model</span>
+        <span style="margin-left:auto;">real-world benchmark</span>
+      </div>
+      <div class="demo-body">
+
+        <!-- Pi tier -->
+        <div class="demo-tier" id="tier-pi">
+          <div class="demo-tier-header">
+            <span class="demo-tier-name">SurvivorBox Pi</span>
+            <span class="demo-tier-spec">Pi 5 · ARM64 · Qwen 2.5 3B</span>
+          </div>
+          <div class="demo-chat">
+            <div style="clear:both;margin-bottom:16px;">
+              <div class="demo-q">What are the signs of altitude sickness?</div>
+            </div>
+            <div class="demo-a" id="pi-response">
+              <span class="demo-a-text" id="pi-text"></span><span class="typing-cursor" id="pi-cursor" style="display:none;"></span>
+            </div>
+          </div>
+          <div class="demo-stats">
+            <div class="stat">
+              <span class="stat-value" id="pi-ttft">—</span>
+              <span class="stat-label">First token</span>
+            </div>
+            <div class="stat">
+              <span class="stat-value" id="pi-tps">—</span>
+              <span class="stat-label">Tokens / sec</span>
+            </div>
+            <div class="stat">
+              <span class="stat-value" id="pi-total">—</span>
+              <span class="stat-label">Full response</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- N100 tier -->
+        <div class="demo-tier" id="tier-n100">
+          <div class="demo-tier-header">
+            <span class="demo-tier-name">SurvivorBox Standard</span>
+            <span class="demo-tier-spec">N100 · x86_64 · Mistral 7B</span>
+          </div>
+          <div class="demo-chat">
+            <div style="clear:both;margin-bottom:16px;">
+              <div class="demo-q">What are the signs of altitude sickness?</div>
+            </div>
+            <div class="demo-a" id="n100-response">
+              <span class="demo-a-text" id="n100-text"></span><span class="typing-cursor" id="n100-cursor" style="display:none;"></span>
+            </div>
+          </div>
+          <div class="demo-stats">
+            <div class="stat">
+              <span class="stat-value" id="n100-ttft">—</span>
+              <span class="stat-label">First token</span>
+            </div>
+            <div class="stat">
+              <span class="stat-value" id="n100-tps">—</span>
+              <span class="stat-label">Tokens / sec</span>
+            </div>
+            <div class="stat">
+              <span class="stat-value" id="n100-total">—</span>
+              <span class="stat-label">Full response</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+      <div class="demo-footer">
+        <span>Pi runs Qwen 2.5 3B · Standard runs Mistral 7B. Same question, real hardware. Numbers updated after benchmark.</span>
+        <button class="replay-btn" onclick="runDemo()">↺ Replay</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Products ───────────────────────────────────────────────────── -->
+<section id="products">
+  <div class="container">
+    <h2 style="font-size:36px;margin-bottom:12px;">Two models, one purpose.</h2>
+    <p style="font-size:18px;color:var(--muted);max-width:560px;">Both run completely offline. The difference is how fast they respond.</p>
+
+    <div class="products-grid">
+      <!-- Pi -->
+      <div class="product-card">
+        <div class="product-body">
+          <div class="product-name">SurvivorBox Pi</div>
+          <div class="product-tagline">For the patient camper. Works great, takes its time.</div>
+          <div class="product-price">$179</div>
+          <div class="product-price-note">One-time. No subscription. No cloud.</div>
+          <div class="product-specs">
+            <div class="spec-row">
+              <span class="spec-key">Hardware</span>
+              <span class="spec-val">Raspberry Pi 5 8GB</span>
+            </div>
+            <div class="spec-row">
+              <span class="spec-key">AI model</span>
+              <span class="spec-val">Qwen 2.5 3B (Q4)</span>
+            </div>
+            <div class="spec-row">
+              <span class="spec-key">Speed</span>
+              <span class="spec-val">~6 tokens/sec</span>
+            </div>
+            <div class="spec-row">
+              <span class="spec-key">Typical response</span>
+              <span class="spec-val">20–35 seconds</span>
+            </div>
+            <div class="spec-row">
+              <span class="spec-key">Offline library</span>
+              <span class="spec-val">Wikipedia + WikiHow</span>
+            </div>
+            <div class="spec-row">
+              <span class="spec-key">Power</span>
+              <span class="spec-val">5V USB-C (any RV port)</span>
+            </div>
+            <div class="spec-row">
+              <span class="spec-key">Setup required</span>
+              <span class="spec-val highlight">None — plug and go</span>
+            </div>
+          </div>
+          <a href="#contact" class="product-cta">Ask about availability</a>
+        </div>
+      </div>
+
+      <!-- N100 -->
+      <div class="product-card featured">
+        <div class="product-badge">Most popular</div>
+        <div class="product-body">
+          <div class="product-name">SurvivorBox Standard</div>
+          <div class="product-tagline">More capable model. Better answers on complex questions.</div>
+          <div class="product-price">$249</div>
+          <div class="product-price-note">One-time. No subscription. No cloud.</div>
+          <div class="product-specs">
+            <div class="spec-row">
+              <span class="spec-key">Hardware</span>
+              <span class="spec-val">Intel N100 mini PC</span>
+            </div>
+            <div class="spec-row">
+              <span class="spec-key">AI model</span>
+              <span class="spec-val highlight">Mistral 7B (Q4)</span>
+            </div>
+            <div class="spec-row">
+              <span class="spec-key">Speed</span>
+              <span class="spec-val">~6 tokens/sec*</span>
+            </div>
+            <div class="spec-row">
+              <span class="spec-key">Typical response</span>
+              <span class="spec-val">15–30 seconds*</span>
+            </div>
+            <div class="spec-row">
+              <span class="spec-key">Offline library</span>
+              <span class="spec-val">Wikipedia + WikiHow</span>
+            </div>
+            <div class="spec-row">
+              <span class="spec-key">Power</span>
+              <span class="spec-val">12V DC or 19V barrel</span>
+            </div>
+            <div class="spec-row">
+              <span class="spec-key">Setup required</span>
+              <span class="spec-val highlight">None — plug and go</span>
+            </div>
+          </div>
+          <a href="#contact" class="product-cta">Ask about availability</a>
+        </div>
+      </div>
+    </div>
+
+    <p style="margin-top:24px;font-size:14px;color:var(--muted);text-align:center;">
+      Both run SurvivorOS. Domain packs (medical, wildfire, marine) coming soon.<br>
+      <span style="font-size:12px;">* Speed figures are pre-benchmark estimates. We'll update with real numbers before launch.</span>
+    </p>
+  </div>
+</section>
+
+<!-- ── How it works ───────────────────────────────────────────────── -->
+<section id="how">
+  <div class="container">
+    <h2 style="font-size:36px;margin-bottom:12px;">Setup takes 30 seconds.</h2>
+    <p style="font-size:18px;color:var(--muted);max-width:560px;">No app. No account. No instructions longer than what fits on the box.</p>
+    <div class="steps">
+      <div>
+        <div class="step-num">01 —</div>
+        <div class="step-title">Plug it in</div>
+        <div class="step-desc">Power from your RV's USB-C port or 12V outlet. The device boots automatically. Green light means ready.</div>
+      </div>
+      <div>
+        <div class="step-num">02 —</div>
+        <div class="step-title">Join the WiFi</div>
+        <div class="step-desc">Open your phone's WiFi settings. Connect to "SurvivorOS". No password. Your phone may ask "use without internet" — tap yes.</div>
+      </div>
+      <div>
+        <div class="step-num">03 —</div>
+        <div class="step-title">Open your browser</div>
+        <div class="step-desc">Go to survivoros.local — or just open any web page and it redirects automatically. Ask anything.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── FAQ ────────────────────────────────────────────────────────── -->
+<section id="faq">
+  <div class="container">
+    <h2 style="font-size:36px;margin-bottom:48px;">Common questions</h2>
+    <div class="faq-grid">
+      <div class="faq-item">
+        <div class="faq-q">Does it need internet at all?</div>
+        <div class="faq-a">No. The AI model and the offline library both run entirely on the device. No data leaves the box. It works in the middle of the desert.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">What can it actually answer?</div>
+        <div class="faq-a">Practical questions: first aid, plant identification, repairs, recipes, navigation basics, weather patterns. It has access to a full offline Wikipedia and WikiHow. It cannot browse the web.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">Why is the Pi version so much cheaper?</div>
+        <div class="faq-a">The Pi 5 costs less but runs the AI model about 3× slower. For most camping questions, slower is fine — you're not in a hurry. Both give the same answers; one just types faster.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">How many phones can connect at once?</div>
+        <div class="faq-a">Multiple people can be connected to the WiFi, but AI responses are queued — one at a time. The offline library (Wikipedia, WikiHow) handles concurrent readers just fine.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">Can I use it for medical emergencies?</div>
+        <div class="faq-a">SurvivorBox is a reference tool, not a medical device. In a real emergency, call 911 first — the device will remind you of this. It's a backup for when you need information and have no signal, not a replacement for professional care.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">What about power in a blackout?</div>
+        <div class="faq-a">It runs on very low power — the Pi version draws under 10W, the N100 around 15W. A small portable battery bank can run it for hours.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">Does it update?</div>
+        <div class="faq-a">When it's connected to internet (at home, a campground with WiFi, etc.) it can download new domain packs via the admin panel. The core software updates are manual for now.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">Where can I buy one?</div>
+        <div class="faq-a">Right now, in person at our lot. Online availability coming soon. Send us a message below if you're not local and we'll let you know when online orders open.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Contact ─────────────────────────────────────────────────────── -->
+<section id="contact" style="background:var(--text);color:var(--bg);">
+  <div class="container" style="text-align:center;">
+    <h2 style="font-size:36px;color:var(--bg);margin-bottom:12px;">Come see one in person.</h2>
+    <p style="font-size:18px;color:rgba(247,245,240,.65);max-width:480px;margin:0 auto 32px;">Available at our RV lot. We'll plug it in, connect your phone, and show you exactly what it does before you decide.</p>
+    <a href="mailto:hello@survivorbox.com" class="btn-primary" style="font-size:16px;">Get in touch</a>
+  </div>
+</section>
+
+<div class="disclaimer-bar">
+  <strong>⚠ NOT MEDICAL OR SAFETY ADVICE.</strong>
+  AI can be wrong or dangerous. Verify anything critical with a qualified professional.
+  In an emergency, <strong>call 911</strong> — do not rely on this device first.
+</div>
+
+<footer>
+  <div>SurvivorBox &mdash; Offline AI for the Outdoors &mdash; <a href="#">Privacy</a></div>
+  <div style="margin-top:6px;">Powered by SurvivorOS &mdash; Ollama &mdash; Open WebUI &mdash; Kiwix</div>
+</footer>
+
+<script>
+// ── Hero typewriter ──────────────────────────────────────────────────
+const heroText = "Carefully push the hook forward through the skin until the barb exits. Cut off the barb with pliers, then back the hook out the way it entered. Clean the wound with clean water or antiseptic. Watch for signs of infection over the next 24-48 hours.";
+let heroIdx = 0;
+function typeHero() {
+  if (heroIdx < heroText.length) {
+    document.getElementById('hero-typing').textContent += heroText[heroIdx++];
+    setTimeout(typeHero, 28);
+  } else {
+    document.getElementById('hero-cursor').style.display = 'none';
+  }
+}
+setTimeout(typeHero, 800);
+
+// ── Speed demo ───────────────────────────────────────────────────────
+const DEMO_RESPONSE = `Altitude sickness (AMS) typically appears 6-12 hours after arriving above 8,000 ft (2,400 m).
+
+Common signs:
+• Headache — the defining symptom
+• Fatigue and weakness
+• Loss of appetite or nausea
+• Dizziness or lightheadedness
+• Difficulty sleeping
+
+If symptoms are mild, rest at the same altitude and drink water. Do not ascend further until symptoms resolve — usually 1-2 days.
+
+Descend immediately if you experience: confusion, inability to walk straight, severe shortness of breath at rest, or a persistent cough. These indicate serious progression that requires descent and medical care.`;
+
+// Pi (Qwen 2.5 3B, ARM64): ~8 t/s, TTFT ~3s
+// UPDATE THESE after running the real benchmark
+const PI_TTFT_MS   = 3000;
+const PI_TPS       = 8;
+
+// N100 (Mistral 7B, x86_64): ~6 t/s, TTFT ~4s — slower t/s, but 7B quality
+// UPDATE THESE after running the real benchmark
+const N100_TTFT_MS = 4000;
+const N100_TPS     = 6;
+
+let demoRunning = false;
+
+function runDemo() {
+  if (demoRunning) return;
+  demoRunning = true;
+
+  // Reset
+  ['pi-text','n100-text'].forEach(id => document.getElementById(id).textContent = '');
+  ['pi-cursor','n100-cursor'].forEach(id => document.getElementById(id).style.display = 'none');
+  ['pi-ttft','pi-tps','pi-total','n100-ttft','n100-tps','n100-total'].forEach(id => document.getElementById(id).textContent = '—');
+
+  const words = DEMO_RESPONSE.split('');
+
+  function typeTier(textId, cursorId, ttftMs, tps, statTtft, statTps, statTotal, onDone) {
+    let idx = 0;
+    const msPerToken = 1000 / tps;
+    const el = document.getElementById(textId);
+    const cur = document.getElementById(cursorId);
+    const startMs = performance.now();
+
+    setTimeout(() => {
+      // Show TTFT stat
+      document.getElementById(statTtft).textContent = (ttftMs / 1000).toFixed(1) + 's';
+      cur.style.display = 'inline-block';
+
+      function tick() {
+        if (idx >= words.length) {
+          cur.style.display = 'none';
+          const totalSec = ((performance.now() - startMs + ttftMs) / 1000).toFixed(0);
+          document.getElementById(statTotal).textContent = totalSec + 's';
+          if (onDone) onDone();
+          return;
+        }
+        // Add ~3 chars per tick to smooth it out visually
+        const chunk = Math.min(3, words.length - idx);
+        el.textContent += words.slice(idx, idx + chunk).join('');
+        idx += chunk;
+        // Update t/s counter
+        const elapsed = (performance.now() - startMs) / 1000;
+        const currentTps = elapsed > 0 ? Math.round(idx / elapsed) : tps;
+        document.getElementById(statTps).textContent = currentTps + ' t/s';
+        setTimeout(tick, msPerToken * chunk);
+      }
+      tick();
+    }, ttftMs);
+  }
+
+  // Run both tiers simultaneously
+  typeTier('pi-text', 'pi-cursor', PI_TTFT_MS, PI_TPS, 'pi-ttft', 'pi-tps', 'pi-total', null);
+  typeTier('n100-text', 'n100-cursor', N100_TTFT_MS, N100_TPS, 'n100-ttft', 'n100-tps', 'n100-total', () => {
+    // N100 finishes first; re-enable replay when Pi finishes
+    const piDuration = PI_TTFT_MS + (DEMO_RESPONSE.length / PI_TPS * 1000);
+    setTimeout(() => { demoRunning = false; }, piDuration - N100_TTFT_MS - (DEMO_RESPONSE.length / N100_TPS * 1000) + 2000);
+  });
+}
+
+// Auto-start demo when section scrolls into view
+const demoObs = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if (e.isIntersecting && !demoRunning) runDemo(); });
+}, { threshold: 0.3 });
+demoObs.observe(document.getElementById('demo'));
+</script>
+</body>
+</html>

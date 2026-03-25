@@ -8,12 +8,49 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      display: flex;
-      flex-direction: column;
       height: 100vh;
       overflow: hidden;
       font-family: system-ui, -apple-system, sans-serif;
       background: #000;
+    }
+
+    /* ── Top nav (matches nginx-injected nav on chat pages) ── */
+    nav#top {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 99998;
+      height: 44px;
+      background: #1C1A17;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 4px;
+      border-bottom: 2px solid #D4570A;
+    }
+    nav#top .brand {
+      color: #D4570A;
+      font-weight: 700;
+      font-size: 14px;
+      letter-spacing: .05em;
+      flex: none;
+      margin-right: 16px;
+    }
+    nav#top a {
+      color: #F7F5F0;
+      font-size: 13px;
+      font-weight: 500;
+      text-decoration: none;
+      padding: 6px 12px;
+      border-radius: 4px;
+    }
+    nav#top a:hover { background: rgba(247,245,240,.12); }
+
+    /* ── Layout: column below nav ── */
+    .page {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      padding-top: 44px;
     }
 
     /* ── Disclaimer banner ────────────────────────────────────────
@@ -63,40 +100,52 @@
       border: none;
       width: 100%;
       background: #fff;
+      min-height: 0;
     }
   </style>
 </head>
 <body>
 
-  <!--
-    DISCLAIMER COPY — v1.0 (2026-03-24)
-    Attorney-reviewed before launch. Do not modify without new legal sign-off.
-    Final copy must remain non-dismissible and visible before any user query.
-  -->
-  <div id="disclaimer" role="alert" aria-live="polite" aria-atomic="true">
+  <nav id="top">
+    <span class="brand">SurvivorOS</span>
+    <a href="/">Chat</a>
+    <a href="/library">Library</a>
+    <a href="/admin">Admin</a>
+  </nav>
 
-    <span class="headline">⚠ EMERGENCY? CALL 911 — DO NOT USE THIS TOOL FIRST</span>
+  <div class="page">
 
-    <span class="body-text">
-      SurvivorOS provides general reference information only.
-      <strong>This is not medical, safety, legal, or professional advice of any kind.</strong>
-      AI can produce incorrect, incomplete, or dangerous information — including on
-      medical emergencies, fire behavior, and survival topics — without warning.
-      Do not rely on AI output for any life-safety decision.
-      Always verify with a qualified professional or authoritative source before acting.
-      By using this tool you accept sole responsibility for all decisions made.
-    </span>
+    <!--
+      DISCLAIMER COPY — v1.0 (2026-03-24)
+      Attorney-reviewed before launch. Do not modify without new legal sign-off.
+      Final copy must remain non-dismissible and visible before any user query.
+    -->
+    <div id="disclaimer" role="alert" aria-live="polite" aria-atomic="true">
 
-    <a href="/library" target="_parent">Verify in Offline Library →</a>
+      <span class="headline">⚠ EMERGENCY? CALL 911 — DO NOT USE THIS TOOL FIRST</span>
+
+      <span class="body-text">
+        SurvivorOS provides general reference information only.
+        <strong>This is not medical, safety, legal, or professional advice of any kind.</strong>
+        AI can produce incorrect, incomplete, or dangerous information — including on
+        medical emergencies, fire behavior, and survival topics — without warning.
+        Do not rely on AI output for any life-safety decision.
+        Always verify with a qualified professional or authoritative source before acting.
+        By using this tool you accept sole responsibility for all decisions made.
+      </span>
+
+      <a href="/library" target="_parent">Verify in Offline Library →</a>
+
+    </div>
+
+    <iframe
+      id="chat"
+      src="/"
+      title="SurvivorOS chat interface"
+      sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+    ></iframe>
 
   </div>
-
-  <iframe
-    id="chat"
-    src="/"
-    title="SurvivorOS chat interface"
-    sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-  ></iframe>
 
 </body>
 </html>

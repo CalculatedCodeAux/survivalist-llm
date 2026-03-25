@@ -236,6 +236,10 @@ create_directories() {
   # Copy project files from repo
   cp "$REPO_DIR/docker-compose.yml"   "$INSTALL_DIR/docker-compose.yml"
   cp -r "$REPO_DIR/config/."          "$INSTALL_DIR/config/"
+  # On the device nginx must bind to all interfaces so WiFi clients can connect.
+  # The repo config uses 127.0.0.1:80 for safe local dev; patch it here.
+  sed -i 's/listen 127\.0\.0\.1:80;/listen 80 default_server;/' \
+    "$INSTALL_DIR/config/nginx.conf"
   cp -r "$REPO_DIR/systemd/"          "$INSTALL_DIR/systemd/"
   cp -r "$REPO_DIR/survivorpack-admin/" "$INSTALL_DIR/survivorpack-admin/"
   cp    "$REPO_DIR/emergency/index.html" "$INSTALL_DIR/emergency/index.html"
@@ -313,18 +317,23 @@ wait_for() {
   echo "[wait-healthy] Waiting for ${name}…"
   while ! curl -sf "$url" >/dev/null 2>&1; do
     sleep 3; elapsed=$(( elapsed + 3 ))
+    # Print a dot every 15s so the user knows we're still working
+    (( elapsed % 15 == 0 )) && echo "[wait-healthy]   … still waiting for ${name} (${elapsed}s / ${max}s)"
     if (( elapsed >= max )); then
-      echo "[wait-healthy] Timed out waiting for ${name}." >&2
+      echo "[wait-healthy] Timed out waiting for ${name} after ${max}s." >&2
       return 1
     fi
   done
   echo "[wait-healthy] ${name} ready after ${elapsed}s."
 }
 
-wait_for "Ollama"            "http://127.0.0.1:11434/api/tags"          120
-wait_for "Open WebUI"        "http://127.0.0.1:8080/health"             120
-wait_for "survivorpack-admin" "http://127.0.0.1:5000/health"            120
-wait_for "kiwix-serve"       "http://127.0.0.1:8888/catalog/search"     60
+wait_for "Ollama"             "http://127.0.0.1:11434/api/tags"         180
+# Open WebUI downloads ~30 embedding/tokenizer files from HuggingFace on first
+# boot before its HTTP server starts. On a typical broadband connection this
+# takes 2-4 minutes. Give it 8 minutes to cover slow connections.
+wait_for "Open WebUI"         "http://127.0.0.1:8080/health"            480
+wait_for "survivorpack-admin" "http://127.0.0.1:5000/health"            180
+wait_for "kiwix-serve"        "http://127.0.0.1:8888/catalog/search"    120
 WAIT
 
   chmod +x "$INSTALL_DIR/scripts/"*.sh

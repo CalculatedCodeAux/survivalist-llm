@@ -112,8 +112,14 @@ def _first_boot_configure():
 
     _create_or_update_ow_model(
         model_id="survivoros-base",
-        name="SurvivorOS — No Pack Active",
-        system_prompt="",
+        name="SurvivorOS",
+        system_prompt=(
+            "You are SurvivorOS, an offline survival and emergency reference assistant. "
+            "Be concise and practical. Prioritize life safety. "
+            "For medical, fire, or structural emergencies always say: call 911 first. "
+            "State clearly when you are uncertain. "
+            "Use both metric and imperial units when relevant."
+        ),
     )
     return True
 
@@ -194,7 +200,15 @@ def _check_config_drift():
 
         if "survivoros-base" not in model_ids:
             log.warning("OW model 'survivoros-base' missing — recreating (DB drift?)")
-            _create_or_update_ow_model("survivoros-base", "SurvivorOS — No Pack Active", "")
+            _create_or_update_ow_model(
+                "survivoros-base",
+                "SurvivorOS",
+                "You are SurvivorOS, an offline survival and emergency reference assistant. "
+                "Be concise and practical. Prioritize life safety. "
+                "For medical, fire, or structural emergencies always say: call 911 first. "
+                "State clearly when you are uncertain. "
+                "Use both metric and imperial units when relevant.",
+            )
         else:
             log.info("OW config drift check: survivoros-base present ✓")
 
@@ -338,83 +352,202 @@ _ADMIN_HTML = """<!DOCTYPE html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SurvivorOS — Pack Manager</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: system-ui, sans-serif; background: #111; color: #eee; padding: 20px; }
-    h1 { font-size: 1.4rem; color: #7bc8ff; margin-bottom: 4px; }
-    .subtitle { font-size: 0.85rem; color: #888; margin-bottom: 24px; }
-    .section { background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 16px; margin-bottom: 20px; }
-    .section h2 { font-size: 1rem; color: #ccc; margin-bottom: 12px; }
-    .pack { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #2a2a2a; }
+    body {
+      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+      background: #F7F5F0;
+      color: #1C1A17;
+      min-height: 100vh;
+    }
+    /* ── Top nav (matches nginx-injected nav on chat pages) ── */
+    nav#top {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 99998;
+      height: 44px;
+      background: #1C1A17;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 4px;
+      border-bottom: 2px solid #D4570A;
+    }
+    nav#top .brand {
+      color: #D4570A;
+      font-weight: 700;
+      font-size: 14px;
+      letter-spacing: .05em;
+      flex: none;
+      margin-right: 16px;
+    }
+    nav#top a {
+      color: #F7F5F0;
+      font-size: 13px;
+      font-weight: 500;
+      text-decoration: none;
+      padding: 6px 12px;
+      border-radius: 4px;
+    }
+    nav#top a.active, nav#top a:hover { background: rgba(247,245,240,.12); }
+    /* ── Content ── */
+    .container {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 72px 20px 72px;
+    }
+    h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 4px; }
+    .subtitle { font-size: 0.85rem; color: #6B6456; margin-bottom: 28px; }
+    .section {
+      background: #fff;
+      border: 1px solid #E0DDDA;
+      border-radius: 10px;
+      padding: 18px;
+      margin-bottom: 20px;
+    }
+    .section h2 {
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: #6B6456;
+      margin-bottom: 14px;
+    }
+    .pack {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 0;
+      border-bottom: 1px solid #F0EDE9;
+    }
     .pack:last-child { border-bottom: none; }
-    .pack-name { font-weight: 600; font-size: 0.95rem; }
-    .pack-meta { font-size: 0.8rem; color: #888; margin-top: 2px; }
-    .badge-active { background: #1a4a1a; color: #4caf50; border: 1px solid #4caf50; border-radius: 4px; padding: 2px 8px; font-size: 0.75rem; margin-left: 8px; }
+    .pack-name { font-weight: 600; font-size: 0.95rem; color: #1C1A17; }
+    .pack-meta { font-size: 0.78rem; color: #6B6456; margin-top: 2px; }
+    .badge-active {
+      background: #D4570A;
+      color: #fff;
+      border-radius: 3px;
+      padding: 2px 7px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
     .pack-actions { display: flex; gap: 8px; flex-shrink: 0; }
-    button, .btn { cursor: pointer; border: none; border-radius: 6px; padding: 6px 14px; font-size: 0.85rem; font-family: inherit; }
-    .btn-activate  { background: #1a3a5c; color: #7bc8ff; border: 1px solid #2a4a6c; }
-    .btn-deactivate{ background: #3a2a1a; color: #ffa040; border: 1px solid #5a3a1a; }
-    .btn-delete    { background: #3a1a1a; color: #ff6666; border: 1px solid #5a2a2a; }
-    .btn-activate:hover  { background: #2a4a7c; }
-    .btn-deactivate:hover{ background: #5a3a1a; }
-    .btn-delete:hover    { background: #5a2a2a; }
-    .empty { color: #555; font-style: italic; padding: 8px 0; }
-    .upload-form { display: flex; flex-direction: column; gap: 10px; }
-    .upload-form input[type=file] { background: #222; border: 1px solid #444; border-radius: 6px; padding: 8px; color: #eee; }
-    .btn-upload { background: #1a3a5c; color: #7bc8ff; border: 1px solid #2a4a6c; width: fit-content; padding: 8px 20px; }
-    .btn-upload:hover { background: #2a4a7c; }
-    .msg { padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; font-size: 0.9rem; }
-    .msg-ok  { background: #1a3a1a; color: #4caf50; border: 1px solid #2a5a2a; }
-    .msg-err { background: #3a1a1a; color: #ff6666; border: 1px solid #5a2a2a; }
-    a.home { color: #7bc8ff; font-size: 0.85rem; text-decoration: none; }
-    a.home:hover { text-decoration: underline; }
+    button {
+      cursor: pointer;
+      border: none;
+      border-radius: 6px;
+      padding: 7px 14px;
+      font-size: 0.82rem;
+      font-family: inherit;
+      font-weight: 600;
+    }
+    .btn-activate   { background: #D4570A; color: #fff; }
+    .btn-activate:hover { background: #B8490A; }
+    .btn-deactivate { background: #F0EDE9; color: #6B6456; border: 1px solid #E0DDDA; }
+    .btn-deactivate:hover { background: #E0DDDA; }
+    .btn-delete     { background: #FFF0F0; color: #C0392B; border: 1px solid #F5CACA; }
+    .btn-delete:hover { background: #F5CACA; }
+    .empty { color: #9B9289; font-style: italic; font-size: 0.9rem; }
+    .upload-form { display: flex; flex-direction: column; gap: 12px; }
+    .upload-form input[type=file] {
+      background: #F7F5F0;
+      border: 2px dashed #C8C4BE;
+      border-radius: 8px;
+      padding: 12px;
+      color: #1C1A17;
+      font-family: inherit;
+      font-size: 0.9rem;
+    }
+    .upload-form input[type=file]:hover { border-color: #D4570A; }
+    .btn-upload { background: #D4570A; color: #fff; width: fit-content; padding: 10px 24px; font-size: 0.9rem; }
+    .btn-upload:hover { background: #B8490A; }
+    .msg { padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; font-size: 0.88rem; font-weight: 500; }
+    .msg-ok  { background: #EBF5EB; color: #2D6A4F; border: 1px solid #A8D5B5; }
+    .msg-err { background: #FFF0F0; color: #C0392B; border: 1px solid #F5CACA; }
+    /* ── Disclaimer footer (matches nginx-injected bar on chat pages) ── */
+    .disclaimer {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: #111;
+      color: #fff;
+      padding: 8px 14px;
+      font-size: 14px;
+      line-height: 1.4;
+      border-top: 3px solid #c00;
+      z-index: 99999;
+    }
+    .disclaimer strong { color: #ff6666; }
+    .disclaimer a { color: #7bc8ff; margin-left: 8px; text-decoration: none; }
   </style>
 </head>
 <body>
-  <h1>SurvivorOS — Pack Manager</h1>
-  <p class="subtitle">Install domain packs to give the AI specialised knowledge. <a class="home" href="/">← Back to Chat</a></p>
+  <nav id="top">
+    <span class="brand">SurvivorOS</span>
+    <a href="/">Chat</a>
+    <a href="/library">Library</a>
+    <a href="/admin" class="active">Admin</a>
+  </nav>
 
-  {% if msg %}
-  <div class="msg {{ 'msg-ok' if ok else 'msg-err' }}">{{ msg }}</div>
-  {% endif %}
+  <div class="container">
+    <h1>Pack Manager</h1>
+    <p class="subtitle">Install domain packs to give the AI specialised knowledge for off-grid scenarios.</p>
 
-  <div class="section">
-    <h2>Installed Packs</h2>
-    {% if packs %}
-    {% for pack in packs %}
-    <div class="pack">
-      <div>
-        <span class="pack-name">{{ pack.name }}</span>
-        {% if pack.active %}<span class="badge-active">ACTIVE</span>{% endif %}
-        <div class="pack-meta">{{ pack.id }} &mdash; {{ pack.get('description', '') }}</div>
-      </div>
-      <div class="pack-actions">
-        {% if pack.active %}
-        <form method="POST" action="/admin/packs/{{ pack.id }}/deactivate">
-          <button class="btn-deactivate" type="submit">Deactivate</button>
-        </form>
-        {% else %}
-        <form method="POST" action="/admin/packs/{{ pack.id }}/activate">
-          <button class="btn-activate" type="submit">Activate</button>
-        </form>
-        {% endif %}
-        <form method="POST" action="/admin/packs/{{ pack.id }}/delete_ui">
-          <button class="btn-delete" type="submit" onclick="return confirm('Delete {{ pack.name }}?')">Delete</button>
-        </form>
-      </div>
-    </div>
-    {% endfor %}
-    {% else %}
-    <p class="empty">No packs installed. Upload a .survivorpack file below.</p>
+    {% if msg %}
+    <div class="msg {{ 'msg-ok' if ok else 'msg-err' }}">{{ msg }}</div>
     {% endif %}
+
+    <div class="section">
+      <h2>Installed Packs</h2>
+      {% if packs %}
+      {% for pack in packs %}
+      <div class="pack">
+        <div>
+          <span class="pack-name">{{ pack.name }}</span>
+          {% if pack.active %}<span class="badge-active">Active</span>{% endif %}
+          <div class="pack-meta">{{ pack.id }} &mdash; {{ pack.get('description', '') }}</div>
+        </div>
+        <div class="pack-actions">
+          {% if pack.active %}
+          <form method="POST" action="/admin/packs/{{ pack.id }}/deactivate">
+            <button class="btn-deactivate" type="submit">Deactivate</button>
+          </form>
+          {% else %}
+          <form method="POST" action="/admin/packs/{{ pack.id }}/activate">
+            <button class="btn-activate" type="submit">Activate</button>
+          </form>
+          {% endif %}
+          <form method="POST" action="/admin/packs/{{ pack.id }}/delete_ui">
+            <button class="btn-delete" type="submit" onclick="return confirm('Delete {{ pack.name }}?')">Delete</button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+      {% else %}
+      <p class="empty">No packs installed. Upload a .survivorpack file below.</p>
+      {% endif %}
+    </div>
+
+    <div class="section">
+      <h2>Upload New Pack</h2>
+      <form class="upload-form" method="POST" action="/admin/packs/upload_ui" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".survivorpack,.zip" required>
+        <button class="btn-upload" type="submit">Upload &amp; Install</button>
+      </form>
+    </div>
   </div>
 
-  <div class="section">
-    <h2>Upload New Pack</h2>
-    <form class="upload-form" method="POST" action="/admin/packs/upload_ui" enctype="multipart/form-data">
-      <input type="file" name="file" accept=".survivorpack,.zip" required>
-      <button class="btn-upload" type="submit">Upload &amp; Install</button>
-    </form>
+  <div class="disclaimer">
+    <strong>⚠ NOT MEDICAL OR SAFETY ADVICE.</strong>
+    AI can be wrong or dangerous. Verify anything critical.
+    Emergency? <strong>Call 911.</strong>
+    <a href="/library">Offline Library →</a>
   </div>
 </body>
 </html>"""
@@ -457,7 +590,7 @@ def upload_pack_ui():
 @app.route("/admin/packs/<pack_id>/delete_ui", methods=["POST"])
 def delete_pack_ui(pack_id):
     """HTML form handler for pack deletion — calls delete_pack() in current context."""
-    result = delete_pack(pack_id)
+    result = uninstall_pack(pack_id)
     resp, status = result if isinstance(result, tuple) else (result, 200)
     data = resp.get_json() or {}
     if status == 200:
