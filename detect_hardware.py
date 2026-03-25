@@ -121,15 +121,12 @@ def run(cmd: list[str], timeout: int = 10) -> tuple[int, str, str]:
 # ---------------------------------------------------------------------------
 
 def get_ram_gb() -> float:
-    try:
-        with open("/proc/meminfo") as f:
-            for line in f:
-                if line.startswith("MemTotal"):
-                    kb = int(line.split()[1])
-                    return round(kb / 1_048_576, 2)
-    except Exception:
-        pass
-    return 0.0
+    with open("/proc/meminfo") as f:
+        for line in f:
+            if line.startswith("MemTotal"):
+                kb = int(line.split()[1])
+                return round(kb / 1_048_576, 2)
+    raise RuntimeError("/proc/meminfo: MemTotal line not found")
 
 
 def get_cpu_cores() -> int:
@@ -198,9 +195,10 @@ def probe_gpu() -> dict:
 def select_model(ram_gb: float, gpu: dict) -> dict:
     """
     Walk the catalogue top-to-bottom and return the first model the hardware
-    can comfortably run.  We leave 1.5 GB RAM headroom for the OS/Docker.
+    can run.  min_ram_gb in each entry is total RAM required (OS overhead
+    already accounted for in the catalogue values).
     """
-    usable_ram = max(0.0, ram_gb - 1.5)
+    usable_ram = ram_gb
     vram = gpu["vram_gb"]
     has_gpu = gpu["type"] in ("nvidia", "amd") and gpu["driver_ok"]
 
@@ -255,6 +253,11 @@ def main():
     print("[detect_hardware] Probing system hardware…", file=sys.stderr)
 
     ram_gb = get_ram_gb()
+
+    if ram_gb < 2.0:
+        print(f"ERROR: {ram_gb} GB RAM detected. SurvivorOS requires ≥ 2 GB RAM.", file=sys.stderr)
+        sys.exit(1)
+
     cpu_cores = get_cpu_cores()
     gpu = probe_gpu()
 
@@ -281,7 +284,9 @@ def main():
     }
 
     # Print JSON to stdout for consumption by setup.sh
-    print(json.dumps(result, indent=2))
+    output = json.dumps(result, indent=2)
+    print(output)
+    return output
 
 
 if __name__ == "__main__":

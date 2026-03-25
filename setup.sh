@@ -231,12 +231,25 @@ create_directories() {
   banner "Step 3/7 — Setting Up Install Directory"
 
   mkdir -p \
-    "$INSTALL_DIR"/{models,webui-data,config,scripts,logs}
+    "$INSTALL_DIR"/{models,webui-data,config,scripts,logs,packs,admin-state,emergency}
 
   # Copy project files from repo
-  cp "$REPO_DIR/docker-compose.yml" "$INSTALL_DIR/docker-compose.yml"
-  cp -r "$REPO_DIR/config/"         "$INSTALL_DIR/config/"
-  cp -r "$REPO_DIR/systemd/"        "$INSTALL_DIR/systemd/"
+  cp "$REPO_DIR/docker-compose.yml"   "$INSTALL_DIR/docker-compose.yml"
+  cp -r "$REPO_DIR/config/"           "$INSTALL_DIR/config/"
+  cp -r "$REPO_DIR/systemd/"          "$INSTALL_DIR/systemd/"
+  cp -r "$REPO_DIR/survivorpack-admin/" "$INSTALL_DIR/survivorpack-admin/"
+  cp    "$REPO_DIR/emergency/index.html" "$INSTALL_DIR/emergency/index.html"
+
+  # Create an empty library.xml so kiwix-serve can start before any packs are installed
+  # (app.py also creates this on first boot, but setup.sh creates it here so the
+  # kiwix-serve container doesn't fail its healthcheck on a brand-new install)
+  if [[ ! -f "$INSTALL_DIR/packs/library.xml" ]]; then
+    cat > "$INSTALL_DIR/packs/library.xml" <<'XML'
+<?xml version='1.0' encoding='utf-8'?>
+<library version="20110515" />
+XML
+    ok "Created empty library.xml"
+  fi
 
   # Create helper scripts directory
   cat > "$INSTALL_DIR/scripts/ap-up.sh" <<'APUP'
@@ -289,20 +302,27 @@ APDOWN
 
   cat > "$INSTALL_DIR/scripts/wait-healthy.sh" <<'WAIT'
 #!/usr/bin/env bash
-# Wait for Ollama to become healthy before declaring startup complete.
+# Wait for all four services to become healthy before declaring startup complete.
 set -euo pipefail
-MAX_WAIT=120   # seconds
-ELAPSED=0
-echo "[wait-healthy] Waiting for Ollama to become ready…"
-while ! curl -sf http://127.0.0.1:11434/api/tags >/dev/null 2>&1; do
-  sleep 3
-  ELAPSED=$(( ELAPSED + 3 ))
-  if (( ELAPSED >= MAX_WAIT )); then
-    echo "[wait-healthy] Timed out waiting for Ollama." >&2
-    exit 1
-  fi
-done
-echo "[wait-healthy] Ollama is ready after ${ELAPSED}s."
+
+wait_for() {
+  local name="$1" url="$2" max="${3:-120}"
+  local elapsed=0
+  echo "[wait-healthy] Waiting for ${name}…"
+  while ! curl -sf "$url" >/dev/null 2>&1; do
+    sleep 3; elapsed=$(( elapsed + 3 ))
+    if (( elapsed >= max )); then
+      echo "[wait-healthy] Timed out waiting for ${name}." >&2
+      return 1
+    fi
+  done
+  echo "[wait-healthy] ${name} ready after ${elapsed}s."
+}
+
+wait_for "Ollama"            "http://127.0.0.1:11434/api/tags"          120
+wait_for "Open WebUI"        "http://127.0.0.1:8080/health"             120
+wait_for "survivorpack-admin" "http://127.0.0.1:5000/health"            120
+wait_for "kiwix-serve"       "http://127.0.0.1:8888/catalog/search"     60
 WAIT
 
   chmod +x "$INSTALL_DIR/scripts/"*.sh
@@ -441,11 +461,19 @@ PATCH
 pull_images_and_model() {
   banner "Step 5/7 — Pulling Docker Images & Downloading LLM"
 
-  log "Pulling Ollama image…"
-  docker pull ollama/ollama:latest
+  log "Pulling Ollama image (0.18.2)…"
+  docker pull ollama/ollama:0.18.2
 
-  log "Pulling Open WebUI image (this can take a while on slow connections)…"
-  docker pull ghcr.io/open-webui/open-webui:main
+  log "Pulling Open WebUI image (0.8.10)…"
+  docker pull ghcr.io/open-webui/open-webui:0.8.10
+
+  log "Pulling kiwix-tools image (3.8.2)…"
+  docker pull ghcr.io/kiwix/kiwix-tools:3.8.2
+
+  log "Building survivorpack-admin image…"
+  docker build -t survivorpack-admin:latest "$INSTALL_DIR/survivorpack-admin/" \
+    || die "survivorpack-admin image build failed."
+  ok "survivorpack-admin image built."
 
   # ── Pre-pull the model ──────────────────────────────────────────────────
   log "Downloading model: ${OLLAMA_MODEL}"
@@ -453,9 +481,9 @@ pull_images_and_model() {
 
   # Start a temporary Ollama container for the pull
   docker run --rm \
-    -v "/opt/survivalist-llm/models:/root/.ollama" \
+    -v "$INSTALL_DIR/models:/root/.ollama" \
     ${GPU_TYPE:+--gpus all} \
-    ollama/ollama:latest \
+    ollama/ollama:0.18.2 \
     ollama pull "${OLLAMA_MODEL}" \
     || die "Model download failed. Check your internet connection and model name."
 
@@ -518,6 +546,12 @@ print_summary() {
   printf "  │    1. Connect to WiFi: %-38s│\n" "\"$AP_SSID\""
   echo "  │    2. Open browser → http://llm.local/                      │"
   echo "  │       (or http://${AP_IP}/)                     │"
+  echo "  │                                                             │"
+  echo "  │  URLS:                                                      │"
+  echo "  │    Chat:       http://llm.local/                            │"
+  echo "  │    Admin:      http://llm.local/admin                       │"
+  echo "  │    Library:    http://llm.local/library                     │"
+  echo "  │    Emergency:  http://llm.local/emergency                   │"
   echo "  │                                                             │"
   echo "  │  MANAGE:                                                    │"
   echo "  │    sudo systemctl status survivalist-llm                    │"

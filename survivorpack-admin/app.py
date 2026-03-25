@@ -28,6 +28,7 @@ import os
 import secrets
 import shutil
 import tempfile
+import threading
 import time
 import zipfile
 from pathlib import Path
@@ -297,7 +298,10 @@ def _write_library_xml(pack_entries):
             book.set("description", entry["description"])
 
     tree = ET.ElementTree(root)
-    tmp = LIBRARY_XML.with_suffix(".tmp")
+    # Unique tmp name per thread to avoid concurrent-write collisions
+    tmp = LIBRARY_XML.with_name(
+        f".library-{os.getpid()}-{threading.get_ident()}.xml.tmp"
+    )
     tree.write(str(tmp), encoding="utf-8", xml_declaration=True)
     os.rename(tmp, LIBRARY_XML)
     log.info("library.xml updated (%d entries)", len(pack_entries))

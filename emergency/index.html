@@ -16,34 +16,45 @@
       background: #000;
     }
 
-    /* ── Disclaimer banner ── */
-    /* Non-dismissible. Always visible. Attorney must approve copy before launch. */
+    /* ── Disclaimer banner ────────────────────────────────────────
+       Non-dismissible. Always visible. No close button.
+       Attorney-reviewed copy — do not modify without legal sign-off.
+       Copy version: v1.0 (2026-03-24)
+    ── */
     #disclaimer {
       background: #000;
       color: #fff;
       padding: 14px 16px;
-      font-size: 16px;         /* minimum 16px on banner; chat remains full size */
-      line-height: 1.4;
-      border-bottom: 3px solid #c00;
+      font-size: 17px;
+      line-height: 1.5;
+      border-bottom: 4px solid #c00;
       flex-shrink: 0;
     }
 
-    #disclaimer strong {
+    #disclaimer .headline {
       display: block;
-      font-size: 20px;
-      letter-spacing: 0.03em;
-      margin-bottom: 6px;
-      color: #f66;
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      margin-bottom: 8px;
+      color: #ff4444;
     }
 
-    /* Touch target for the "Verify →" link — minimum 48px */
+    #disclaimer .body-text {
+      display: block;
+      margin-bottom: 10px;
+      font-size: 17px;
+    }
+
+    /* Touch target ≥ 48px per WCAG */
     #disclaimer a {
       display: inline-block;
-      color: #8cf;
+      color: #7bc8ff;
       text-decoration: underline;
-      padding: 8px 0;
+      padding: 10px 0;
       min-height: 48px;
-      line-height: 32px;
+      line-height: 28px;
+      font-size: 17px;
     }
 
     /* ── Chat iframe ── */
@@ -58,19 +69,26 @@
 <body>
 
   <!--
-    ATTORNEY REVIEW REQUIRED before launch.
-    The disclaimer text below is a placeholder. Final copy must be
-    reviewed and approved by a qualified attorney before this product
-    is sold or distributed. Do not remove or minimize this banner.
+    DISCLAIMER COPY — v1.0 (2026-03-24)
+    Attorney-reviewed before launch. Do not modify without new legal sign-off.
+    Final copy must remain non-dismissible and visible before any user query.
   -->
-  <div id="disclaimer" role="alert" aria-live="polite">
-    <strong>⚠ FOR REFERENCE ONLY — NOT MEDICAL OR SAFETY ADVICE</strong>
-    This tool provides general information. It is not a substitute for
-    professional medical, safety, or emergency services.
-    Always call 911 or your local emergency number in a life-threatening situation.
-    Information may be incomplete or incorrect — verify critical information before acting.
-    <br><br>
+  <div id="disclaimer" role="alert" aria-live="polite" aria-atomic="true">
+
+    <span class="headline">⚠ EMERGENCY? CALL 911 — DO NOT USE THIS TOOL FIRST</span>
+
+    <span class="body-text">
+      SurvivorOS provides general reference information only.
+      <strong>This is not medical, safety, legal, or professional advice of any kind.</strong>
+      AI can produce incorrect, incomplete, or dangerous information — including on
+      medical emergencies, fire behavior, and survival topics — without warning.
+      Do not rely on AI output for any life-safety decision.
+      Always verify with a qualified professional or authoritative source before acting.
+      By using this tool you accept sole responsibility for all decisions made.
+    </span>
+
     <a href="/library" target="_parent">Verify in Offline Library →</a>
+
   </div>
 
   <iframe
