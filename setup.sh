@@ -488,7 +488,7 @@ pull_images_and_model() {
     -v "$INSTALL_DIR/models:/root/.ollama" \
     ${DOCKER_GPU_FLAG} \
     ollama/ollama:0.18.2 \
-    ollama pull "${OLLAMA_MODEL}" \
+    pull "${OLLAMA_MODEL}" \
     || die "Model download failed. Check your internet connection and model name."
 
   ok "Model '${OLLAMA_MODEL}' downloaded successfully."
