@@ -328,7 +328,13 @@ wait_for "kiwix-serve"       "http://127.0.0.1:8888/catalog/search"     60
 WAIT
 
   chmod +x "$INSTALL_DIR/scripts/"*.sh
-  chmod 700 "$INSTALL_DIR"          # Only root should read secrets
+  chmod 700 "$INSTALL_DIR"          # Only root should read secrets (.env has WiFi password)
+  # nginx (www-data) needs execute permission to traverse into subdirectories,
+  # and read permission on the emergency page. The +x on $INSTALL_DIR lets
+  # nginx stat() subdirs without reading the directory listing itself.
+  chmod o+x "$INSTALL_DIR"
+  chmod 755 "$INSTALL_DIR/emergency"
+  chmod 644 "$INSTALL_DIR/emergency/index.html"
   ok "Directory structure created at $INSTALL_DIR"
 }
 
