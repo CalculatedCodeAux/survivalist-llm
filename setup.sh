@@ -480,9 +480,13 @@ pull_images_and_model() {
   log "(This is a one-time download. Progress is shown below.)"
 
   # Start a temporary Ollama container for the pull
+  DOCKER_GPU_FLAG=""
+  [[ "$GPU_TYPE" == "nvidia" ]] && DOCKER_GPU_FLAG="--gpus all"
+
+  # shellcheck disable=SC2086  # intentional word-split for optional flag
   docker run --rm \
     -v "$INSTALL_DIR/models:/root/.ollama" \
-    ${GPU_TYPE:+--gpus all} \
+    ${DOCKER_GPU_FLAG} \
     ollama/ollama:0.18.2 \
     ollama pull "${OLLAMA_MODEL}" \
     || die "Model download failed. Check your internet connection and model name."
