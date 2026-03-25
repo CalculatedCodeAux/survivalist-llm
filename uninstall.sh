@@ -148,8 +148,13 @@ elif [[ -f /etc/dnsmasq.conf ]] && [[ ! -s /etc/dnsmasq.conf ]]; then
   rm -f /etc/dnsmasq.conf
 fi
 
-# Restart dnsmasq with restored config (non-fatal)
-systemctl restart dnsmasq 2>/dev/null || true
+# Stop dnsmasq — it was started by setup.sh for the WiFi AP.
+# Do NOT restart it: dnsmasq running with default config binds 0.0.0.0:53,
+# which blocks systemd-resolved from rebinding its stub listener (127.0.0.53:53)
+# in Step 5 below, breaking DNS resolution after uninstall.
+systemctl stop dnsmasq 2>/dev/null || true
+systemctl disable dnsmasq 2>/dev/null || true
+ok "Stopped dnsmasq."
 
 # Remove nginx config (restore default)
 if [[ -f /etc/nginx/nginx.conf ]] && grep -q 'survivalist\|llm\.local' /etc/nginx/nginx.conf 2>/dev/null; then
