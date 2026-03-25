@@ -235,7 +235,7 @@ create_directories() {
 
   # Copy project files from repo
   cp "$REPO_DIR/docker-compose.yml"   "$INSTALL_DIR/docker-compose.yml"
-  cp -r "$REPO_DIR/config/"           "$INSTALL_DIR/config/"
+  cp -r "$REPO_DIR/config/."          "$INSTALL_DIR/config/"
   cp -r "$REPO_DIR/systemd/"          "$INSTALL_DIR/systemd/"
   cp -r "$REPO_DIR/survivorpack-admin/" "$INSTALL_DIR/survivorpack-admin/"
   cp    "$REPO_DIR/emergency/index.html" "$INSTALL_DIR/emergency/index.html"
