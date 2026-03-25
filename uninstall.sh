@@ -222,9 +222,9 @@ if [[ -d "$INSTALL_DIR" ]]; then
       mv "$MODEL_DIR" "$MODELS_TMP/models"
     fi
     rm -rf "$INSTALL_DIR"
-    mkdir -p "$INSTALL_DIR/models"
+    mkdir -p "$INSTALL_DIR"
     if [[ -d "$MODELS_TMP/models" ]]; then
-      mv "$MODELS_TMP/models/." "$INSTALL_DIR/models/"
+      mv "$MODELS_TMP/models" "$INSTALL_DIR/models"
       rmdir "$MODELS_TMP" 2>/dev/null || true
       ok "Model files preserved at $INSTALL_DIR/models/ (${MODEL_SIZE})"
       echo -e "  ${YELLOW}To delete them later:${NC}  sudo rm -rf $INSTALL_DIR"
